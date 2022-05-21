@@ -1,17 +1,25 @@
-// import * as cdk from 'aws-cdk-lib';
-// import { Template } from 'aws-cdk-lib/assertions';
-// import * as PitsInfra from '../lib/pits-infra-stack';
+import * as cdk from 'aws-cdk-lib';
+import { Template } from 'aws-cdk-lib/assertions';
+import * as PitsInfra from '../lib/pits-infra-stack';
 
-// example test. To run these tests, uncomment this file along with the
-// example resource in lib/pits-infra-stack.ts
-test('SQS Queue Created', () => {
-//   const app = new cdk.App();
-//     // WHEN
-//   const stack = new PitsInfra.PitsInfraStack(app, 'MyTestStack');
-//     // THEN
-//   const template = Template.fromStack(stack);
+test('Stack Creates Resources', () => {
+    const app = new cdk.App();
+    const stack = new PitsInfra.PitsInfraStack(app, 'MyTestStack');
+    const template = Template.fromStack(stack);
 
-//   template.hasResourceProperties('AWS::SQS::Queue', {
-//     VisibilityTimeout: 300
-//   });
+    template.hasResourceProperties('AWS::IoT::Policy', {
+        PolicyName: 'PinTheSkyThingPolicy'
+    });
+
+    template.hasResourceProperties('AWS::S3::Bucket', {
+        BucketName: 'philcali-pinthesky-storage'
+    });
+
+    template.hasResourceProperties('AWS::IAM::Role', {
+        RoleName: 'PinTheSkyRole'
+    });
+
+    template.hasResourceProperties('AWS::IAM::ManagedPolicy', {
+        ManagedPolicyName: 'philcali-pinthesky-storage-policy',
+    })
 });

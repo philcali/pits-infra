@@ -1,14 +1,27 @@
-# Welcome to your CDK TypeScript project
+# Pits Device Infra
 
-This is a blank project for CDK development with TypeScript.
+This is currently my cloud infrastructure to influence my "Pi In the Sky" devices
+There's really nothing unique to this infra except that it is using a bucket that
+I own. With a little work, this can made into a constructs library, or something
+a bit more reusable.
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+## Resources
 
-## Useful commands
+- S3 bucket for video storage
+- AWS IoT Thing Policy for remote control, configuration, and updates
+- AWS IAM Role, allows X509 authentication on the device for AWS credentials
+- AWS IAM Managed Policy, allows the device to upload videos
+- AWS IoT Role Alias, for the credentials provider to assume the role
 
-* `npm run build`   compile typescript to js
-* `npm run watch`   watch for changes and compile
-* `npm run test`    perform the jest unit tests
-* `cdk deploy`      deploy this stack to your default AWS account/region
-* `cdk diff`        compare deployed stack with current state
-* `cdk synth`       emits the synthesized CloudFormation template
+That's it currently. There will be more to come for notifications, rules engines,
+and other such automation.
+
+## Deploying
+
+```
+npm run test
+cdk diff
+cdk deploy
+```
+
+Done-zo.
