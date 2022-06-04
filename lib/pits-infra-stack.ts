@@ -85,114 +85,148 @@ export class PitsInfraStack extends Stack {
       }
     });
 
-    const thingPolicy = new aws_iot.CfnPolicy(this, 'PitsThingPolicy', {
-      policyName: 'PinTheSkyThingPolicy',
-      policyDocument: {
-        "Version": "2012-10-17",
-        "Statement": [
-          {
-            "Effect": "Allow",
-            "Action": [
-              "iot:Connect"
+    const policyName = 'PinTheSkyThingPolicy';
+    const policyDocument = {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "iot:Connect"
+          ],
+          "Resource": [
+            this.formatArn({
+              service: 'iot',
+              resource: "client/${iot:Connection.Thing.ThingName}"
+            })
+          ]
+        },
+        {
+          "Effect": "Allow",
+          "Action": [
+            "iot:Publish"
+          ],
+          "Resource": [
+            // Software events
+            this.formatArn({
+              service: 'iot',
+              resource: 'topic/pinthesky/events/output'
+            }),
+            // Runtime configuration updates
+            this.formatArn({
+              service: 'iot',
+              resource: 'topic/$aws/things/${iot:Connection.Thing.ThingName}/shadow/name/pinthesky/*'
+            }),
+            // Jobs software updates
+            this.formatArn({
+              service: 'iot',
+              resource: 'topic/$aws/things/${iot:Connection.Thing.ThingName}/jobs/*'
+            })
+          ]
+        },
+        {
+          "Effect": "Allow",
+          "Action": [
+            "iot:Subscribe"
+          ],
+          "Resource": [
+            // Remote control events
+            this.formatArn({
+              service: 'iot',
+              resource: 'topicfilter/pinthesky/events/${iot:Connection.Thing.ThingName}/input'
+            }),
+            // Configuration changes
+            this.formatArn({
+              service: 'iot',
+              resource: 'topicfilter/$aws/things/${iot:Connection.Thing.ThingName}/shadow/name/pinthesky/*'
+            }),
+            // Software updates
+            this.formatArn({
+              service: 'iot',
+              resource: 'topicfilter/$aws/things/${iot:Connection.Thing.ThingName}/jobs/*'
+            })
+          ]
+        },
+        {
+          "Effect": "Allow",
+          "Action": [
+            "iot:Receive"
+          ],
+          "Resource": [
+            // Remote control events
+            this.formatArn({
+              service: 'iot',
+              resource: 'topic/pinthesky/events/${iot:Connection.Thing.ThingName}/input'
+            }),
+            // Configuration changes
+            this.formatArn({
+              service: 'iot',
+              resource: 'topic/$aws/things/${iot:Connection.Thing.ThingName}/shadow/name/pinthesky/*'
+            }),
+            // Software updates
+            this.formatArn({
+              service: 'iot',
+              resource: 'topic/$aws/things/${iot:Connection.Thing.ThingName}/jobs/*'
+            })
+          ]
+        },
+        {
+          "Effect": "Allow",
+          "Action": [
+            "iot:AssumeRoleWithCertificate"
+          ],
+          "Resource": [
+            roleAlias.getResponseField("roleAliasArn")
+          ]
+        }
+      ] 
+    };
+
+    const thingPolicy = new AwsCustomResource(this, 'PitsThingPolicy', {
+      policy: {
+        statements: [
+          new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: [
+              'iot:CreatePolicy',
+              'iot:CreatePolicyVersion',
+              'iot:DeletePolicy'
             ],
-            "Resource": [
+            resources: [
               this.formatArn({
                 service: 'iot',
-                resource: "client/${iot:Connection.Thing.ThingName}"
+                resource: `policy/${policyName}`
               })
             ]
-          },
-          {
-            "Effect": "Allow",
-            "Action": [
-              "iot:Publish"
-            ],
-            "Resource": [
-              // Software events
-              this.formatArn({
-                service: 'iot',
-                resource: 'topic/pinthesky/events/output'
-              }),
-              // Runtime configuration updates
-              this.formatArn({
-                service: 'iot',
-                resource: 'topic/$aws/things/${iot:Connection.Thing.ThingName}/shadow/name/pinthesky/get'
-              }),
-              this.formatArn({
-                service: 'iot',
-                resource: 'topic/$aws/things/${iot:Connection.Thing.ThingName}/shadow/name/pinthesky/update'
-              }),
-              // Jobs software updates
-              this.formatArn({
-                service: 'iot',
-                resource: 'topic/$aws/things/${iot:Connection.Thing.ThingName}/jobs/*'
-              })
-            ]
-          },
-          {
-            "Effect": "Allow",
-            "Action": [
-              "iot:Subscribe"
-            ],
-            "Resource": [
-              // Remote control events
-              this.formatArn({
-                service: 'iot',
-                resource: 'topicfilter/pinthesky/events/${iot:Connection.Thing.ThingName}/input'
-              }),
-              // Configuration changes
-              this.formatArn({
-                service: 'iot',
-                resource: 'topicfilter/$aws/things/${iot:Connection.Thing.ThingName}/shadow/name/pinthesky*'
-              }),
-              // Software updates
-              this.formatArn({
-                service: 'iot',
-                resource: 'topicfilter/$aws/things/${iot:Connection.Thing.ThingName}/jobs/*-next/*'
-              }),
-              this.formatArn({
-                service: 'iot',
-                resource: 'topicfilter/$aws/things/${iot:Connection.Thing.ThingName}/jobs/*/update/*'
-              })
-            ]
-          },
-          {
-            "Effect": "Allow",
-            "Action": [
-              "iot:Receive"
-            ],
-            "Resource": [
-              // Remote control events
-              this.formatArn({
-                service: 'iot',
-                resource: 'topic/pinthesky/events/${iot:Connection.Thing.ThingName}/input'
-              }),
-              // Configuration changes
-              this.formatArn({
-                service: 'iot',
-                resource: 'topic/$aws/things/${iot:Connection.Thing.ThingName}/shadow/name/pinthesky/*'
-              }),
-              // Software updates
-              this.formatArn({
-                service: 'iot',
-                resource: 'topic/$aws/things/${iot:Connection.Thing.ThingName}/jobs/*-next/*'
-              }),
-              this.formatArn({
-                service: 'iot',
-                resource: 'topic/$aws/things/${iot:Connection.Thing.ThingName}/jobs/*/update/*'
-              })
-            ]
-          },
-          {
-            "Effect": "Allow",
-            "Action": [
-              "iot:AssumeRoleWithCertificate"
-            ],
-            "Resource": [
-              roleAlias.getResponseField("roleAliasArn")
-            ]
-          }
-        ] 
+          })
+        ]
+      },
+      onCreate: {
+        physicalResourceId: PhysicalResourceId.of(policyName),
+        service: 'Iot',
+        action: 'createPolicy',
+        parameters: {
+          policyName,
+          policyDocument: JSON.stringify(policyDocument)
+        }
+      },
+      onUpdate: {
+        physicalResourceId: PhysicalResourceId.of(policyName),
+        service: 'Iot',
+        action: 'createPolicyVersion',
+        parameters: {
+          policyName,
+          policyDocument: JSON.stringify(policyDocument),
+          setAsDefault: true
+        }
+      },
+      onDelete: {
+        physicalResourceId: PhysicalResourceId.of(policyName),
+        service: 'Iot',
+        action: 'deletePolicy',
+        parameters: {
+          policyName
+        }
       }
     });
   }
