@@ -1,8 +1,19 @@
-import { aws_iot, Stack, StackProps } from 'aws-cdk-lib';
+import * as path from 'path'
+import { ArnFormat, Duration, Stack, StackProps } from 'aws-cdk-lib';
 import { Effect, ManagedPolicy, PolicyDocument, PolicyStatement, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
-import { Bucket } from 'aws-cdk-lib/aws-s3';
+import { Code, Function, Runtime } from 'aws-cdk-lib/aws-lambda';
+import { Bucket, EventType } from 'aws-cdk-lib/aws-s3';
+import { LambdaDestination } from 'aws-cdk-lib/aws-s3-notifications';
+import { Topic } from 'aws-cdk-lib/aws-sns';
 import { AwsCustomResource, PhysicalResourceId } from 'aws-cdk-lib/custom-resources';
 import { Construct } from 'constructs';
+import { LambdaRestApi } from 'aws-cdk-lib/aws-apigateway';
+import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
+import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
+import { CnameRecord, HostedZone } from 'aws-cdk-lib/aws-route53';
+
+const ZONE_ID = 'Z2DL6AR506I4EE';
+const CERTIFICATE_ID = 'f2674298-1642-4284-a9a6-e90b8803ff6e';
 
 export class PitsInfraStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -11,7 +22,123 @@ export class PitsInfraStack extends Stack {
     const bucketName = 'philcali-pinthesky-storage';
     const storage = new Bucket(this, 'PitsStorage', {
       bucketName
-    })
+    });
+
+    const notification = new Topic(this, 'PitsTopic', {
+      displayName: "Pi In The Sky",
+    });
+
+    const pitsTable = new Table(this, 'PitsDataTable', {
+      tableName: 'PitsTable',
+      partitionKey: {
+        type: AttributeType.STRING,
+        name: 'PK'
+      },
+      sortKey: {
+        type: AttributeType.STRING,
+        name: 'SK'
+      },
+      timeToLiveAttribute: 'expiresIn',
+      billingMode: BillingMode.PROVISIONED,
+      readCapacity: 1,
+      writeCapacity: 1
+    });
+
+    const domainName = 'url.pinthesky.com';
+    const formatMessage = new Function(this, 'PitsFormat', {
+      handler: 'index.handler',
+      runtime: Runtime.PYTHON_3_9,
+      code: Code.fromAsset(path.join(__dirname, 'handler')),
+      environment: {
+        'NOTIFICATION_TOPIC_ARN': notification.topicArn,
+        'TABLE_NAME': pitsTable.tableName,
+        'DOMAIN_NAME': domainName
+      }
+    });
+
+    formatMessage.addToRolePolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: [
+        's3:GetObject'
+      ],
+      resources: [
+        storage.arnForObjects("motion_videos/*")
+      ]
+    }));
+
+    formatMessage.addToRolePolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: [
+        'sns:Publish'
+      ],
+      resources: [
+        notification.topicArn
+      ]
+    }));
+
+    formatMessage.addToRolePolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: [
+        'dynamodb:PutItem'
+      ],
+      resources: [
+        pitsTable.tableArn        
+      ]
+    }));
+
+    storage.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(formatMessage), {
+      prefix: 'motion_videos/'
+    });
+
+    const apiHandler = new Function(this, 'PitsShortenerHandler', {
+      handler: 'index.handler',
+      runtime: Runtime.PYTHON_3_9,
+      code: Code.fromAsset(path.join(__dirname, 'api')),
+      environment: {
+        'TABLE_NAME': pitsTable.tableName
+      }
+    });
+
+    apiHandler.addToRolePolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: [
+        'dynamodb:GetItem'
+      ],
+      resources: [
+        pitsTable.tableArn
+      ]
+    }));
+
+    const restApi = new LambdaRestApi(this, 'PitsURLShortener', {
+      deployOptions: {
+        stageName: 'v1'
+      },
+      handler: apiHandler
+    });
+
+    const certificate = Certificate.fromCertificateArn(this, 'PitsShortenerCertificate', this.formatArn({
+      service: 'acm',
+      resource: 'certificate',
+      resourceName: CERTIFICATE_ID,
+      arnFormat: ArnFormat.SLASH_RESOURCE_NAME
+    }));
+
+    const hostedZone = HostedZone.fromHostedZoneAttributes(this, 'PitsHostedZone', {
+      hostedZoneId: ZONE_ID,
+      zoneName: 'pinthesky.com'
+    });
+
+    const apiDomainName = restApi.addDomainName('PitsShortenerDomain', {
+      domainName,
+      certificate
+    });
+
+    const recordSet = new CnameRecord(this, 'PitsShortenerCNAME', {
+      domainName: apiDomainName.domainNameAliasDomainName,
+      zone: hostedZone,
+      recordName: domainName,
+      ttl: Duration.minutes(30)
+    });
 
     const pitsRole = new Role(this, 'PitsRole', {
       roleName: 'PinTheSkyRole',
