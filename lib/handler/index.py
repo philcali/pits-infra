@@ -7,6 +7,7 @@ import random
 from time import time
 from math import floor
 
+
 def handler(event, context):
     print(f'Event payload: {json.dumps(event)}')
     letters = string.ascii_letters

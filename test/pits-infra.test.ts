@@ -7,10 +7,6 @@ test('Stack Creates Resources', () => {
     const stack = new PitsInfra.PitsInfraStack(app, 'MyTestStack');
     const template = Template.fromStack(stack);
 
-    template.hasResourceProperties('AWS::IoT::Policy', {
-        PolicyName: 'PinTheSkyThingPolicy'
-    });
-
     template.hasResourceProperties('AWS::S3::Bucket', {
         BucketName: 'philcali-pinthesky-storage'
     });

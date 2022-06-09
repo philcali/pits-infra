@@ -133,7 +133,7 @@ export class PitsInfraStack extends Stack {
       certificate
     });
 
-    const recordSet = new CnameRecord(this, 'PitsShortenerCNAME', {
+    new CnameRecord(this, 'PitsShortenerCNAME', {
       domainName: apiDomainName.domainNameAliasDomainName,
       zone: hostedZone,
       recordName: domainName,
@@ -145,7 +145,7 @@ export class PitsInfraStack extends Stack {
       assumedBy: new ServicePrincipal('credentials.iot.amazonaws.com')
     });
 
-    const putPolicy = new ManagedPolicy(this, 'PitsUploadPolicy', {
+    new ManagedPolicy(this, 'PitsUploadPolicy', {
       managedPolicyName: 'philcali-pinthesky-storage-policy',
       document: new PolicyDocument({
         statements: [
@@ -309,7 +309,7 @@ export class PitsInfraStack extends Stack {
       ] 
     };
 
-    const thingPolicy = new AwsCustomResource(this, 'PitsThingPolicy', {
+    new AwsCustomResource(this, 'PitsThingPolicy', {
       policy: {
         statements: [
           new PolicyStatement({
