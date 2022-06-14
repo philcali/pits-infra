@@ -1,7 +1,7 @@
 import * as path from 'path'
-import { ArnFormat, Duration, Stack, StackProps } from 'aws-cdk-lib';
+import { ArnFormat,Aws,Duration, Stack, StackProps } from 'aws-cdk-lib';
 import { Effect, ManagedPolicy, PolicyDocument, PolicyStatement, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
-import { Code, Function, Runtime } from 'aws-cdk-lib/aws-lambda';
+import { Code, EcrImageCode, Function, Handler, Runtime } from 'aws-cdk-lib/aws-lambda';
 import { Bucket, EventType } from 'aws-cdk-lib/aws-s3';
 import { LambdaDestination } from 'aws-cdk-lib/aws-s3-notifications';
 import { Topic } from 'aws-cdk-lib/aws-sns';
@@ -10,7 +10,10 @@ import { Construct } from 'constructs';
 import { LambdaRestApi } from 'aws-cdk-lib/aws-apigateway';
 import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
+import { DockerImageAsset } from 'aws-cdk-lib/aws-ecr-assets';
 import { CnameRecord, HostedZone } from 'aws-cdk-lib/aws-route53';
+import { DockerImageName, ECRDeployment } from 'cdk-ecr-deployment';
+import { Repository, RepositoryEncryption } from 'aws-cdk-lib/aws-ecr';
 
 const ZONE_ID = 'Z2DL6AR506I4EE';
 const CERTIFICATE_ID = 'f2674298-1642-4284-a9a6-e90b8803ff6e';
@@ -27,6 +30,21 @@ export class PitsInfraStack extends Stack {
     const notification = new Topic(this, 'PitsTopic', {
       displayName: "Pi In The Sky",
     });
+
+    const conversionImage = new DockerImageAsset(this, 'PitsConvertImage', {
+      directory: path.join(__dirname, 'image')
+    });
+
+    const ecrRepoName = 'pits-convert';
+    const ecrRepo = new Repository(this, 'PitsConvertECR', {
+      encryption: RepositoryEncryption.AES_256,
+      repositoryName: ecrRepoName,
+
+    })
+    const conversionEcrDeployment = new ECRDeployment(this, 'PitsConvertECRDeployment', {
+      src: new DockerImageName(conversionImage.imageUri),
+      dest: new DockerImageName(`${Aws.ACCOUNT_ID}.dkr.ecr.${Aws.REGION}.amazonaws.com/${ecrRepo.repositoryName}:latest`)
+    })
 
     const pitsTable = new Table(this, 'PitsDataTable', {
       tableName: 'PitsTable',
@@ -45,6 +63,36 @@ export class PitsInfraStack extends Stack {
     });
 
     const domainName = 'url.pinthesky.com';
+    const conversionFunction = new Function(this, 'PitsConvertFunction', {
+      handler: Handler.FROM_IMAGE,
+      runtime: Runtime.FROM_IMAGE,
+      code: new EcrImageCode(ecrRepo),
+      environment: {
+        'CONVERSION_FORMAT': 'mp4',
+        'FRAMERATE': '15'
+      },
+      memorySize: 1024,
+      timeout: Duration.minutes(2)
+    });
+    conversionFunction.node.addDependency(conversionEcrDeployment);
+    conversionFunction.addToRolePolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: [
+        's3:GetObject'
+      ],
+      resources: [
+        storage.arnForObjects("motion_videos/*")
+      ]
+    }));
+    conversionFunction.addToRolePolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: [
+        's3:PutObject'
+      ],
+      resources: [
+        storage.arnForObjects("motion_videos_converted/*")
+      ]
+    }));
     const formatMessage = new Function(this, 'PitsFormat', {
       handler: 'index.handler',
       runtime: Runtime.PYTHON_3_9,
@@ -62,7 +110,7 @@ export class PitsInfraStack extends Stack {
         's3:GetObject'
       ],
       resources: [
-        storage.arnForObjects("motion_videos/*")
+        storage.arnForObjects("motion_videos_converted/*")
       ]
     }));
 
@@ -86,8 +134,12 @@ export class PitsInfraStack extends Stack {
       ]
     }));
 
-    storage.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(formatMessage), {
+    storage.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(conversionFunction), {
       prefix: 'motion_videos/'
+    })
+
+    storage.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(formatMessage), {
+      prefix: 'motion_videos_converted/'
     });
 
     const apiHandler = new Function(this, 'PitsShortenerHandler', {

@@ -43,7 +43,7 @@ def handler(event, context):
                     },
                     ConditionExpression='attribute_not_exists(PK) AND attribute_not_exists(SK)')
                 message = f'There was motion detected on {thing_name}: https://{domain_name}/{thing_name}/{random_string}'
-                sns.publish(TopicArn=topic_arn, Message=message, Subject="Motion Video Alert")
+                sns.publish(TopicArn=topic_arn, Message=message, Subject=f'[Motion]: {thing_name}')
                 print(f'Sent notification to {topic_arn} about s3://{record["s3"]["bucket"]["name"]}/{record["s3"]["object"]["key"]}')
                 break
             except botocore.exceptions.ClientError as e:
