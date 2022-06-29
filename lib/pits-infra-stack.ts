@@ -1,19 +1,26 @@
 import * as path from 'path'
-import { ArnFormat,Aws,Duration, Stack, StackProps } from 'aws-cdk-lib';
-import { Effect, ManagedPolicy, PolicyDocument, PolicyStatement, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
-import { Code, EcrImageCode, Function, Handler, Runtime } from 'aws-cdk-lib/aws-lambda';
+import { ArnFormat, Aws, Duration, Stack, StackProps } from 'aws-cdk-lib';
+import { Effect, FederatedPrincipal, ManagedPolicy, PolicyDocument, PolicyStatement, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
+import { EcrImageCode, Function, Handler, Runtime } from 'aws-cdk-lib/aws-lambda';
 import { Bucket, EventType } from 'aws-cdk-lib/aws-s3';
 import { LambdaDestination } from 'aws-cdk-lib/aws-s3-notifications';
-import { Topic } from 'aws-cdk-lib/aws-sns';
 import { AwsCustomResource, PhysicalResourceId } from 'aws-cdk-lib/custom-resources';
 import { Construct } from 'constructs';
-import { LambdaRestApi } from 'aws-cdk-lib/aws-apigateway';
-import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
 import { DockerImageAsset } from 'aws-cdk-lib/aws-ecr-assets';
-import { CnameRecord, HostedZone } from 'aws-cdk-lib/aws-route53';
+import { ARecord, CnameRecord, HostedZone, RecordTarget } from 'aws-cdk-lib/aws-route53';
 import { DockerImageName, ECRDeployment } from 'cdk-ecr-deployment';
 import { Repository, RepositoryEncryption } from 'aws-cdk-lib/aws-ecr';
+import {
+  AccountRecovery,
+  CfnIdentityPool,
+  CfnIdentityPoolRoleAttachment,
+  ClientAttributes,
+  Mfa, OAuthScope,
+  UserPool,
+  UserPoolClientIdentityProvider,
+  UserPoolEmail
+} from 'aws-cdk-lib/aws-cognito';
 
 const ZONE_ID = 'Z2DL6AR506I4EE';
 const CERTIFICATE_ID = 'f2674298-1642-4284-a9a6-e90b8803ff6e';
@@ -27,10 +34,6 @@ export class PitsInfraStack extends Stack {
       bucketName
     });
 
-    const notification = new Topic(this, 'PitsTopic', {
-      displayName: "Pi In The Sky",
-    });
-
     const conversionImage = new DockerImageAsset(this, 'PitsConvertImage', {
       directory: path.join(__dirname, 'image')
     });
@@ -40,29 +43,13 @@ export class PitsInfraStack extends Stack {
       encryption: RepositoryEncryption.AES_256,
       repositoryName: ecrRepoName,
 
-    })
+    });
+
     const conversionEcrDeployment = new ECRDeployment(this, 'PitsConvertECRDeployment', {
       src: new DockerImageName(conversionImage.imageUri),
       dest: new DockerImageName(`${Aws.ACCOUNT_ID}.dkr.ecr.${Aws.REGION}.amazonaws.com/${ecrRepo.repositoryName}:latest`)
-    })
-
-    const pitsTable = new Table(this, 'PitsDataTable', {
-      tableName: 'PitsTable',
-      partitionKey: {
-        type: AttributeType.STRING,
-        name: 'PK'
-      },
-      sortKey: {
-        type: AttributeType.STRING,
-        name: 'SK'
-      },
-      timeToLiveAttribute: 'expiresIn',
-      billingMode: BillingMode.PROVISIONED,
-      readCapacity: 1,
-      writeCapacity: 1
     });
 
-    const domainName = 'url.pinthesky.com';
     const conversionFunction = new Function(this, 'PitsConvertFunction', {
       handler: Handler.FROM_IMAGE,
       runtime: Runtime.FROM_IMAGE,
@@ -93,79 +80,9 @@ export class PitsInfraStack extends Stack {
         storage.arnForObjects("motion_videos_converted/*")
       ]
     }));
-    const formatMessage = new Function(this, 'PitsFormat', {
-      handler: 'index.handler',
-      runtime: Runtime.PYTHON_3_9,
-      code: Code.fromAsset(path.join(__dirname, 'handler')),
-      environment: {
-        'NOTIFICATION_TOPIC_ARN': notification.topicArn,
-        'TABLE_NAME': pitsTable.tableName,
-        'DOMAIN_NAME': domainName
-      }
-    });
-
-    formatMessage.addToRolePolicy(new PolicyStatement({
-      effect: Effect.ALLOW,
-      actions: [
-        's3:GetObject'
-      ],
-      resources: [
-        storage.arnForObjects("motion_videos_converted/*")
-      ]
-    }));
-
-    formatMessage.addToRolePolicy(new PolicyStatement({
-      effect: Effect.ALLOW,
-      actions: [
-        'sns:Publish'
-      ],
-      resources: [
-        notification.topicArn
-      ]
-    }));
-
-    formatMessage.addToRolePolicy(new PolicyStatement({
-      effect: Effect.ALLOW,
-      actions: [
-        'dynamodb:PutItem'
-      ],
-      resources: [
-        pitsTable.tableArn        
-      ]
-    }));
 
     storage.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(conversionFunction), {
       prefix: 'motion_videos/'
-    })
-
-    storage.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(formatMessage), {
-      prefix: 'motion_videos_converted/'
-    });
-
-    const apiHandler = new Function(this, 'PitsShortenerHandler', {
-      handler: 'index.handler',
-      runtime: Runtime.PYTHON_3_9,
-      code: Code.fromAsset(path.join(__dirname, 'api')),
-      environment: {
-        'TABLE_NAME': pitsTable.tableName
-      }
-    });
-
-    apiHandler.addToRolePolicy(new PolicyStatement({
-      effect: Effect.ALLOW,
-      actions: [
-        'dynamodb:GetItem'
-      ],
-      resources: [
-        pitsTable.tableArn
-      ]
-    }));
-
-    const restApi = new LambdaRestApi(this, 'PitsURLShortener', {
-      deployOptions: {
-        stageName: 'v1'
-      },
-      handler: apiHandler
     });
 
     const certificate = Certificate.fromCertificateArn(this, 'PitsShortenerCertificate', this.formatArn({
@@ -180,18 +97,156 @@ export class PitsInfraStack extends Stack {
       zoneName: 'pinthesky.com'
     });
 
-    const apiDomainName = restApi.addDomainName('PitsShortenerDomain', {
-      domainName,
-      certificate
-    });
-
-    new CnameRecord(this, 'PitsShortenerCNAME', {
-      domainName: apiDomainName.domainNameAliasDomainName,
+    const pitsDomain = new ARecord(this, 'PitsARecord', {
       zone: hostedZone,
-      recordName: domainName,
-      ttl: Duration.minutes(30)
+      target: RecordTarget.fromIpAddresses('198.51.100.1')
     });
 
+    const userPool = new UserPool(this, 'PitsUserPool', {
+      accountRecovery: AccountRecovery.EMAIL_ONLY,
+      selfSignUpEnabled: false,
+      userPoolName: 'pinthesky-users',
+      email: UserPoolEmail.withCognito('noreply@verificationemail.com'),
+      enableSmsRole: false,
+      signInCaseSensitive: false,
+      mfa: Mfa.OPTIONAL,
+      mfaSecondFactor: {
+        otp: true,
+        sms: false
+      },
+      passwordPolicy: {
+        minLength: 12,
+        requireSymbols: true,
+        requireDigits: true
+      },
+      signInAliases: {
+        username: true,
+        email: true
+      }
+    });
+
+    userPool.node.addDependency(pitsDomain);
+
+    const writeAttributes = new ClientAttributes()
+      .withStandardAttributes({ fullname: true, email: true });
+    const readAttributes = writeAttributes
+      .withStandardAttributes({ emailVerified: true });
+
+    const userPoolClient = userPool.addClient('Client', {
+      generateSecret: true,
+      authFlows: {
+        userSrp: true,
+        userPassword: true
+      },
+      enableTokenRevocation: true,
+      accessTokenValidity: Duration.hours(1),
+      refreshTokenValidity: Duration.hours(1),
+      idTokenValidity: Duration.hours(1),
+      readAttributes,
+      writeAttributes,
+      userPoolClientName: 'pits-app-client',
+      supportedIdentityProviders: [
+        UserPoolClientIdentityProvider.COGNITO
+      ],
+      oAuth: {
+        flows: {
+          authorizationCodeGrant: true,
+          implicitCodeGrant: true
+        },
+        scopes: [
+          OAuthScope.OPENID,
+          OAuthScope.PROFILE,
+          OAuthScope.EMAIL
+        ],
+        callbackUrls: [
+          'http://localhost:8080/login',
+          'https://api.pinthesky.com/login'
+        ],
+        logoutUrls: [
+          'http://localhost:8080/logout',
+          'https://api.pinthesky.com/logout'
+        ]
+      }
+    });
+
+    userPool.addDomain('Domain', {
+      cognitoDomain: {
+        domainPrefix: 'pinthesky'
+      }
+    });
+
+    const customAuthDomain = userPool.addDomain('CustomDomain', {
+      customDomain: {
+        certificate,
+        domainName: 'auth.pinthesky.com'
+      }
+    });
+
+    new CnameRecord(this, 'PitsAuthAliasRecord', {
+      zone: hostedZone,
+      domainName: customAuthDomain.cloudFrontDomainName,
+      recordName: 'auth.pinthesky.com'
+    });
+
+    const identityPool = new CfnIdentityPool(this, 'PitsIdentityPool', {
+      identityPoolName: 'pinthesky-identities',
+      allowUnauthenticatedIdentities: false,
+      cognitoIdentityProviders: [
+        {
+          clientId: userPoolClient.userPoolClientId,
+          providerName: userPool.userPoolProviderName
+        }
+      ]
+    });
+
+    const cognitoPrincipal = "cognito-identity.amazonaws.com";
+    const authenticatedUser = new Role(this, 'PitsAuthenticatedRole', {
+      roleName: 'pinthesky-auth-role',
+      assumedBy: new FederatedPrincipal(cognitoPrincipal, {
+        "StringEquals": {
+          [`${cognitoPrincipal}:aud`]: `${Aws.REGION}:${identityPool.ref}`
+        },
+        "ForAnyValue:StringLike": {
+          [`${cognitoPrincipal}:amr`]: "authenticated"
+        }
+      }, "sts:AssumeRoleWithWebIdentity")
+    });
+
+    new ManagedPolicy(this, 'PitsAuthenticatedPolicy', {
+      roles: [ authenticatedUser ],
+      managedPolicyName: 'pinthesky-auth-policy',
+      document: new PolicyDocument({
+        statements: [
+          new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: [
+              "mobileanalytics:PutEvents",
+              "cognito-identity:*",
+              "cognito-sync:*"
+            ],
+            resources: [
+              "*"
+            ]
+          })
+        ]
+      })
+    });
+
+    new CfnIdentityPoolRoleAttachment(this, 'PitsAuthenticatedAttachment', {
+      identityPoolId: identityPool.ref,
+      roles: {
+        "authenticated": authenticatedUser.roleArn
+      },
+      roleMappings: {
+        "pinthesky-users": {
+          type: "Token",
+          ambiguousRoleResolution: "AuthenticatedRole",
+          identityProvider: `${userPool.userPoolProviderName}:${userPoolClient.userPoolClientId}`
+        }
+      }
+    });
+
+    // Below is the AWS IoT stuff... needs a construct
     const pitsRole = new Role(this, 'PitsRole', {
       roleName: 'PinTheSkyRole',
       assumedBy: new ServicePrincipal('credentials.iot.amazonaws.com')
