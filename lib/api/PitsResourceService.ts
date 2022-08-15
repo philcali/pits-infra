@@ -152,6 +152,16 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
         this.lambdaFunction.addToRolePolicy(new PolicyStatement({
             effect: Effect.ALLOW,
             actions: [
+                "s3:ListBucket"
+            ],
+            resources: [
+                this.storage.bucket.bucketArn
+            ]
+        }));
+
+        this.lambdaFunction.addToRolePolicy(new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: [
                 'iot:DescribeThing',
                 'iot:ListThingGroups',
                 'iot:ListThingsInThingGroup',

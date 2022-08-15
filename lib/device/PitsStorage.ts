@@ -130,7 +130,7 @@ export class PitsStorage extends Construct implements IPitsStorage {
         }));
         conversionFunction.node.addDependency(conversionEcrDeployment);
         this.bucket.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(conversionFunction), {
-            prefix: `${this.motionVideoPath}/*`
+            prefix: `${this.motionVideoPath}/`,
         });
         return conversionFunction;
     }
