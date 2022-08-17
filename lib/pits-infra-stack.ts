@@ -57,8 +57,8 @@ export class PitsInfraStack extends Stack {
       storage: deviceConnection.storage,
       captureImagePath: deviceConnection.role.captureImagesPath,
       consoleOrigin: `https://${consoleDomain}`,
-      functionCode: new SubmoduleCode(path.join(__dirname, 'api', 'build'), {
-          moduleName: 'lib/api/build',
+      functionCode: new SubmoduleCode(path.join(__dirname, 'assets', 'api'), {
+          moduleName: 'lib/assets/api',
           buildCommand: './dev.make-zip.sh',
           buildOutput: 'build_function.zip'
       }),
@@ -78,7 +78,7 @@ export class PitsInfraStack extends Stack {
 
     new PitsConsole(this, 'Console', {
       sources: [
-        Source.asset(path.join(__dirname, 'console', 'build', 'build'))
+        Source.asset(path.join(__dirname, 'assets', 'console', 'build'))
       ],
       bucketName: 'philcali-pits-console',
       certificate,
