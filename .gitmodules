@@ -1,3 +1,6 @@
 [submodule "lib/api/build"]
 	path = lib/api/build
 	url = https://github.com/philcali/pits-api.git
+[submodule "lib/console/build"]
+	path = lib/console/build
+	url = https://github.com/philcali/pits-console.git

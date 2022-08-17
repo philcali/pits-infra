@@ -31,7 +31,7 @@ export interface IPitsAuthorization {
 export interface PitsAuthorizationProps {
     readonly poolName?: string;
     readonly enableDevelopmentOrigin?: boolean;
-    readonly customOrigin?: string;
+    readonly customOrigins?: string[];
 }
 
 export class PitsAuthorization extends Construct implements IPitsAuthorization {
@@ -74,9 +74,7 @@ export class PitsAuthorization extends Construct implements IPitsAuthorization {
         if (props?.enableDevelopmentOrigin === true) {
             redirectOrigins.push('http://localhost:3000');
         }
-        if (props?.customOrigin) {
-            redirectOrigins.push(props.customOrigin);
-        }
+        props?.customOrigins?.forEach(redirect => redirectOrigins.push(redirect));
         const userPoolClient = userPool.addClient('Client', {
             generateSecret: true,
             authFlows: {

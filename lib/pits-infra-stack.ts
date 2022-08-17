@@ -5,6 +5,10 @@ import { HostedZone } from 'aws-cdk-lib/aws-route53';
 import { PitsDeviceConnection } from './device/PitsDeviceConnection';
 import { PitsAuthorization } from './auth/PitsAuthorization';
 import { PitsResourceService } from './api/PitsResourceService';
+import { SubmoduleCode } from './SubmoduleCode';
+import { PitsConsole } from './console/PitsConsole';
+import { Source } from 'aws-cdk-lib/aws-s3-deployment';
+import * as path from 'path';
 
 const ZONE_ID = 'Z2DL6AR506I4EE';
 const CERTIFICATE_ID = 'f2674298-1642-4284-a9a6-e90b8803ff6e';
@@ -20,9 +24,10 @@ export class PitsInfraStack extends Stack {
       arnFormat: ArnFormat.SLASH_RESOURCE_NAME
     }));
 
+    const zoneName = "pinthesky.com";
     const hostedZone = HostedZone.fromHostedZoneAttributes(this, 'PitsHostedZone', {
       hostedZoneId: ZONE_ID,
-      zoneName: 'pinthesky.com'
+      zoneName
     });
 
     const deviceConnection = new PitsDeviceConnection(this, 'DeviceConnection', {
@@ -30,15 +35,20 @@ export class PitsInfraStack extends Stack {
       enableDefaultMotionVideoConversion: true
     });
 
+    const apiDomain = `api.${zoneName}`;
+    const consoleDomain = `app.${zoneName}`;
     const authorization = new PitsAuthorization(this, 'Authorization', {
       enableDevelopmentOrigin: true,
-      customOrigin: "https://api.pinthesky.com"
+      customOrigins: [
+        `https://${apiDomain}`,
+        `https://${consoleDomain}`
+      ]
     });
 
     authorization.addDomain('CustomDomain', {
       certificate,
       hostedZone,
-      domainName: 'auth.pinthesky.com',
+      domainName: `auth.${zoneName}`,
       createARecord: true
     });
 
@@ -46,7 +56,12 @@ export class PitsInfraStack extends Stack {
       enableDevelopmentOrigin: true,
       storage: deviceConnection.storage,
       captureImagePath: deviceConnection.role.captureImagesPath,
-      consoleOrigin: "https://pinthesky.com",
+      consoleOrigin: `https://${consoleDomain}`,
+      functionCode: new SubmoduleCode(path.join(__dirname, 'api', 'build'), {
+          moduleName: 'lib/api/build',
+          buildCommand: './dev.make-zip.sh',
+          buildOutput: 'build_function.zip'
+      }),
       authorization: {
         issuer: authorization.userPool.userPoolProviderUrl,
         audience: [
@@ -58,7 +73,19 @@ export class PitsInfraStack extends Stack {
     resourceService.addDomain('CustonDomain', {
       certificate,
       hostedZone,
-      domainName: 'api.pinthesky.com'
+      domainName: apiDomain
+    });
+
+    new PitsConsole(this, 'Console', {
+      sources: [
+        Source.asset(path.join(__dirname, 'console', 'build', 'build'))
+      ],
+      bucketName: 'philcali-pits-console',
+      certificate,
+      hostedZone,
+      domainNames: [
+        consoleDomain
+      ],
     })
   }
 }

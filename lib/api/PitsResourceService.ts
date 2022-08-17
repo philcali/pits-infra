@@ -6,7 +6,7 @@ import {
 } from "aws-cdk-lib/aws-dynamodb";
 import { Code, Function, IFunction, Runtime } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
-import { ArnFormat, AssetHashType, Duration, Stack } from "aws-cdk-lib";
+import { ArnFormat, Duration, Stack } from "aws-cdk-lib";
 import { AwsIotAccountEndpoint, IAwsIotAccountEndpoint } from "./AwsIotAccountEndpoint";
 import { Effect, PolicyStatement, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import {
@@ -22,9 +22,6 @@ import {
 import { IPitsStorage } from "../device/PitsStorage";
 import { ICertificate } from "aws-cdk-lib/aws-certificatemanager";
 import { CnameRecord, IHostedZone } from "aws-cdk-lib/aws-route53";
-import * as path from 'path';
-import * as child from 'child_process';
-import * as fs from 'fs';
 
 export interface PitsResourceServiceAuthorizationProps {
     readonly issuer: string,
@@ -34,12 +31,12 @@ export interface PitsResourceServiceAuthorizationProps {
 
 export interface PitsResourceServiceProps {
     readonly apiName?: string;
-    readonly functionCode?: Code;
     readonly table?: ITable;
     readonly captureImagePath?: string;
     readonly enableDevelopmentOrigin?: boolean;
     readonly authorization?: PitsResourceServiceAuthorizationProps;
     readonly dataEndpoint?: IAwsIotAccountEndpoint;
+    readonly functionCode: Code;
     readonly storage: IPitsStorage;
     readonly consoleOrigin: string;
 }
@@ -58,21 +55,6 @@ export interface IPitsResourceService {
     readonly stageId: string;
 
     addDomain(id: string, props: PitsResourceServiceDomainProps): void;
-}
-
-interface BuildOutput {
-    assestHash: string,
-    archive: string
-}
-
-function apiBuild(buildPath: string): BuildOutput {
-    child.execSync('./dev.make-zip.sh', {
-        cwd: buildPath,
-    });
-    return {
-        archive: path.join(__dirname, 'build', 'build_function.zip'),
-        assestHash: child.execSync("git submodule status | sed -E 's|([0-9A-Za-z]+) .*|\\1|'").toString('utf-8').trim()
-    };
 }
 
 export class PitsResourceService extends Construct implements IPitsResourceService {
@@ -101,18 +83,11 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
             tableName: 'PitsResources'
         });
 
-        let code = props.functionCode;
-        if (typeof code === 'undefined') {
-            let buildArchive = apiBuild(path.join(__dirname, 'build'));
-            code = Code.fromAsset(buildArchive.archive, {
-                assetHash: buildArchive.assestHash,
-            });
-        }
         const captureImagePath = props.captureImagePath || 'capture_images'
         this.lambdaFunction = new Function(this, 'Function', {
             runtime: Runtime.PYTHON_3_9,
             handler: 'pinthesky.resource.api',
-            code,
+            code: props.functionCode,
             timeout: Duration.minutes(1),
             memorySize: 512,
             environment: {
