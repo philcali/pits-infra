@@ -2,11 +2,12 @@ import {
     AttributeType,
     BillingMode,
     ITable,
+    ProjectionType,
     Table
 } from "aws-cdk-lib/aws-dynamodb";
 import { Code, Function, IFunction, Runtime } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
-import { ArnFormat, Duration, Stack } from "aws-cdk-lib";
+import { ArnFormat, Aws, Duration, Stack } from "aws-cdk-lib";
 import { AwsIotAccountEndpoint, IAwsIotAccountEndpoint } from "./AwsIotAccountEndpoint";
 import { Effect, PolicyStatement, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import {
@@ -22,6 +23,9 @@ import {
 import { IPitsStorage } from "../device/PitsStorage";
 import { ICertificate } from "aws-cdk-lib/aws-certificatemanager";
 import { CnameRecord, IHostedZone } from "aws-cdk-lib/aws-route53";
+import { EventType } from "aws-cdk-lib/aws-s3";
+import { LambdaDestination } from "aws-cdk-lib/aws-s3-notifications";
+import * as path from 'path';
 
 export interface PitsResourceServiceAuthorizationProps {
     readonly issuer: string,
@@ -68,21 +72,40 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
         super(scope, id);
 
         this.storage = props.storage;
-        this.table = props.table || new Table(this, 'Table', {
-            partitionKey: {
-                name: 'PK',
-                type: AttributeType.STRING
-            },
-            sortKey: {
-                name: 'SK',
-                type: AttributeType. STRING
-            },
-            readCapacity: 1,
-            writeCapacity: 1,
-            billingMode: BillingMode.PROVISIONED,
-            tableName: 'PitsResources'
-        });
-
+        let table = props.table;
+        if (!table) {
+            let tableImpl = new Table(this, 'Table', {
+                partitionKey: {
+                    name: 'PK',
+                    type: AttributeType.STRING
+                },
+                sortKey: {
+                    name: 'SK',
+                    type: AttributeType. STRING
+                },
+                readCapacity: 1,
+                writeCapacity: 1,
+                billingMode: BillingMode.PROVISIONED,
+                tableName: 'PitsResources',
+                timeToLiveAttribute: 'expiresIn'
+            });
+            tableImpl.addGlobalSecondaryIndex({
+                indexName: 'GS1',
+                partitionKey: {
+                    name: 'GS1-PK',
+                    type: AttributeType.STRING
+                },
+                sortKey: {
+                    name: 'createTime',
+                    type: AttributeType.NUMBER
+                },
+                readCapacity: 1,
+                writeCapacity: 1,
+                projectionType: ProjectionType.ALL,
+            });
+            table = tableImpl;
+        }
+        this.table = table;
         const captureImagePath = props.captureImagePath || 'capture_images'
         this.lambdaFunction = new Function(this, 'Function', {
             runtime: Runtime.PYTHON_3_9,
@@ -92,6 +115,7 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
             memorySize: 512,
             environment: {
                 'TABLE_NAME': this.table.tableName,
+                'INDEX_NAME_1': 'GS1',
                 'DATA_ENDPOINT': (props.dataEndpoint || AwsIotAccountEndpoint.dataEndpoint(this)).endpointAddress,
                 'BUCKET_NAME': this.storage.bucket.bucketName,
                 'IMAGE_PREFIX': captureImagePath
@@ -239,6 +263,32 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
                 arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
                 resourceName: '*/*'
             })
+        });
+
+        const indexFunction = new Function(this, 'IndexFunction', {
+            code: Code.fromAsset(path.join(__dirname, 'handlers', 'index_conversion')),
+            runtime: Runtime.PYTHON_3_9,
+            handler: 'index.handler',
+            environment: {
+                'TABLE_NAME': this.table.tableName,
+                'ACCOUNT_ID': Aws.ACCOUNT_ID,
+                'EXPIRE_DAYS': '180',
+            },
+            memorySize: 512,
+            timeout: Duration.minutes(1)
+        });
+        indexFunction.addToRolePolicy(new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: [
+                'dynamodb:PutItem'
+            ],
+            resources: [
+                this.table.tableArn
+            ]
+        }));
+
+        props.storage.bucket.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(indexFunction), {
+            prefix: this.storage.motionVideoConvertedPath + '/'
         });
     }
 
