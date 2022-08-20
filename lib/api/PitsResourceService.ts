@@ -73,6 +73,7 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
 
         this.storage = props.storage;
         let table = props.table;
+        let indexes = [];
         if (!table) {
             let tableImpl = new Table(this, 'Table', {
                 partitionKey: {
@@ -89,10 +90,11 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
                 tableName: 'PitsResources',
                 timeToLiveAttribute: 'expiresIn'
             });
+            let indexName = 'GS1';
             tableImpl.addGlobalSecondaryIndex({
-                indexName: 'GS1',
+                indexName,
                 partitionKey: {
-                    name: 'GS1-PK',
+                    name: `${indexName}-PK`,
                     type: AttributeType.STRING
                 },
                 sortKey: {
@@ -103,6 +105,7 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
                 writeCapacity: 1,
                 projectionType: ProjectionType.ALL,
             });
+            indexes.push(indexName);
             table = tableImpl;
         }
         this.table = table;
@@ -136,6 +139,18 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
                 this.table.tableArn
             ]
         }));
+
+        indexes.forEach(indexName => {
+            this.lambdaFunction.addToRolePolicy(new PolicyStatement({
+                effect: Effect.ALLOW,
+                actions: [
+                    'dynamodb:Query'
+                ],
+                resources: [
+                    `${this.table.tableArn}/index/${indexName}`
+                ]
+            }));
+        });
 
         this.lambdaFunction.addToRolePolicy(new PolicyStatement({
             effect: Effect.ALLOW,
