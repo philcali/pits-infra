@@ -1,10 +1,11 @@
-import { Aws, Duration } from "aws-cdk-lib";
+import { Aws, Duration, Fn } from "aws-cdk-lib";
 import { IRepository, Repository, RepositoryEncryption } from "aws-cdk-lib/aws-ecr";
 import { DockerImageAsset } from "aws-cdk-lib/aws-ecr-assets";
 import { Effect, PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { EcrImageCode, Function, Handler, IFunction, Runtime } from "aws-cdk-lib/aws-lambda";
 import { Bucket, EventType, IBucket, LifecycleRule, StorageClass } from "aws-cdk-lib/aws-s3";
 import { LambdaDestination } from "aws-cdk-lib/aws-s3-notifications";
+import { AwsCustomResource, AwsCustomResourcePolicy, PhysicalResourceId } from "aws-cdk-lib/custom-resources";
 import { DockerImageName, ECRDeployment } from "cdk-ecr-deployment";
 import { Construct } from "constructs";
 import * as path from 'path';
@@ -93,6 +94,33 @@ export class PitsStorage extends Construct implements IPitsStorage {
             dest: new DockerImageName(`${Aws.ACCOUNT_ID}.dkr.ecr.${Aws.REGION}.amazonaws.com/${ecrRepo.repositoryName}:latest`)
         });
 
+        // Due to the limitation of how tagging digests are rotated, we need a new
+        // Custom resource when the image updates, with a "no-op" delete.
+        const taggedDigest = new AwsCustomResource(this, 'ConvertDigest', {
+            policy: AwsCustomResourcePolicy.fromSdkCalls({
+                resources: [
+                    ecrRepo.repositoryArn
+                ]
+            }),
+            onCreate: {
+                physicalResourceId: PhysicalResourceId.of(conversionImage.assetHash),
+                action: 'describeImages',
+                service: 'ECR',
+                parameters: {
+                    repositoryName: ecrRepo.repositoryName,
+                    filter: {
+                        tagStatus: 'TAGGED'
+                    },
+                    imageIds: [
+                        {
+                            imageTag: 'latest'
+                        }
+                    ]
+                },
+            },
+        });
+        taggedDigest.node.addDependency(conversionEcrDeployment);
+
         let conversionPath = this.motionVideoConvertedPath;
         let lastSlashIndex = conversionPath.lastIndexOf('/');
         if (lastSlashIndex === conversionPath.length - 1) {
@@ -101,7 +129,9 @@ export class PitsStorage extends Construct implements IPitsStorage {
         const conversionFunction = new Function(this, 'ConvertFunction', {
             handler: Handler.FROM_IMAGE,
             runtime: Runtime.FROM_IMAGE,
-            code: new EcrImageCode(ecrRepo),
+            code: new EcrImageCode(ecrRepo, {
+                tagOrDigest: `sha256:${Fn.select(1, Fn.split(":", taggedDigest.getResponseField('imageDetails.0.imageDigest')))}`
+            }),
             environment: {
                 'CONVERSION_FORMAT': (props?.conversionFormat || 'mp4'),
                 'CONVERSION_PATH': conversionPath,
@@ -128,7 +158,6 @@ export class PitsStorage extends Construct implements IPitsStorage {
                 this.bucket.arnForObjects(`${this.motionVideoConvertedPath}/*`)
             ]
         }));
-        conversionFunction.node.addDependency(conversionEcrDeployment);
         this.bucket.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(conversionFunction), {
             prefix: `${this.motionVideoPath}/`,
         });
