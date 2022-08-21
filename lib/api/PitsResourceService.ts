@@ -26,6 +26,7 @@ import { CnameRecord, IHostedZone } from "aws-cdk-lib/aws-route53";
 import { EventType } from "aws-cdk-lib/aws-s3";
 import { LambdaDestination } from "aws-cdk-lib/aws-s3-notifications";
 import * as path from 'path';
+import { ITopic, Topic } from "aws-cdk-lib/aws-sns";
 
 export interface PitsResourceServiceAuthorizationProps {
     readonly issuer: string,
@@ -36,6 +37,7 @@ export interface PitsResourceServiceAuthorizationProps {
 export interface PitsResourceServiceProps {
     readonly apiName?: string;
     readonly table?: ITable;
+    readonly topic?: ITopic;
     readonly captureImagePath?: string;
     readonly enableDevelopmentOrigin?: boolean;
     readonly authorization?: PitsResourceServiceAuthorizationProps;
@@ -55,6 +57,7 @@ export interface IPitsResourceService {
     readonly table: ITable;
     readonly storage: IPitsStorage;
     readonly lambdaFunction: IFunction;
+    readonly topic: ITopic;
     readonly apiId: string;
     readonly stageId: string;
 
@@ -65,6 +68,7 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
     readonly table: ITable;
     readonly storage: IPitsStorage;
     readonly lambdaFunction: IFunction;
+    readonly topic: ITopic;
     readonly apiId: string;
     readonly stageId: string;
 
@@ -109,6 +113,11 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
             table = tableImpl;
         }
         this.table = table;
+        this.topic = props.topic || new Topic(this, 'PitsNotifications', {
+            topicName: "PitsNotifications",
+            displayName: "Pi In The Sky",
+        });
+
         const captureImagePath = props.captureImagePath || 'capture_images'
         this.lambdaFunction = new Function(this, 'Function', {
             runtime: Runtime.PYTHON_3_9,
@@ -121,7 +130,9 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
                 'INDEX_NAME_1': 'GS1',
                 'DATA_ENDPOINT': (props.dataEndpoint || AwsIotAccountEndpoint.dataEndpoint(this)).endpointAddress,
                 'BUCKET_NAME': this.storage.bucket.bucketName,
-                'IMAGE_PREFIX': captureImagePath
+                'IMAGE_PREFIX': captureImagePath,
+                'VIDEO_PREFIX': this.storage.motionVideoConvertedPath,
+                'TOPIC_ARN': this.topic.topicArn
             }
         });
 
@@ -160,6 +171,16 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
             resources: [
                 this.storage.bucket.arnForObjects(`${captureImagePath}/*`),
                 this.storage.arnForMotionVideoConvertedObjects()
+            ]
+        }));
+
+        this.lambdaFunction.addToRolePolicy(new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: [
+                "sns:Subscribe"
+            ],
+            resources: [
+                this.topic.topicArn
             ]
         }));
 
@@ -301,6 +322,15 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
                 this.table.tableArn
             ]
         }));
+        indexFunction.addToRolePolicy(new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: [
+                's3:Get*'
+            ],
+            resources: [
+                this.storage.arnForMotionVideoConvertedObjects()
+            ]
+        }))
 
         props.storage.bucket.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(indexFunction), {
             prefix: this.storage.motionVideoConvertedPath + '/'

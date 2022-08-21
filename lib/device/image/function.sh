@@ -16,8 +16,12 @@ function handler () {
     aws s3 cp $video_object $TEMP_DIR
     NEW_VIDEO_FILE="${VIDEO_FILE%.*}.${CONVERSION_FORMAT}"
     ffmpeg -r $FRAMERATE -i "$TEMP_DIR/$VIDEO_FILE" -c copy "$TEMP_DIR/$NEW_VIDEO_FILE"
+    DURATION=$(mediainfo --Output=JSON "$TEMP_DIR/$NEW_VIDEO_FILE" | jq '.media.track[] | select(.["@type"] == "General") | .Duration' | tr -d '"')
     BUCKET_NAME=$(echo "$video_object" | sed -E 's|^s3://([^/]+)/.+|\1|')
-    aws s3 cp "$TEMP_DIR/$NEW_VIDEO_FILE" s3://$BUCKET_NAME/$CONVERSION_PATH/$CAMERA_NAME/$NEW_VIDEO_FILE
+    aws s3 cp \
+        "$TEMP_DIR/$NEW_VIDEO_FILE" \
+        s3://$BUCKET_NAME/$CONVERSION_PATH/$CAMERA_NAME/$NEW_VIDEO_FILE \
+        --metadata "{\"x-amzn-meta-duration\": \"$DURATION\" }"
     rm -rf $TEMP_DIR
   done
 
