@@ -144,6 +144,7 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
                 'dynamodb:DeleteItem',
                 'dynamodb:UpdateItem',
                 'dynamodb:BatchWriteItem',
+                'dynamodb:BatchGetItem',
                 'dynamodb:Query',
             ],
             resources: [
@@ -203,6 +204,9 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
                 'iot:GetThingShadow',
                 'iot:UpdateThingShadow',
                 'iot:Publish',
+                "sns:GetSubscriptionAttributes",
+                "sns:SetSubscriptionAttributes",
+                "sns:Unsubscribe"
             ],
             resources: [
                 '*'
