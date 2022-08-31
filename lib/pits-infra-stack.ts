@@ -76,6 +76,10 @@ export class PitsInfraStack extends Stack {
       domainName: apiDomain
     });
 
+    resourceService.addNotification('Motion', {
+      baseUrl: `https://${consoleDomain}`
+    });
+
     new PitsConsole(this, 'Console', {
       sources: [
         Source.asset(path.join(__dirname, 'assets', 'console', 'build'))

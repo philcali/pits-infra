@@ -3,9 +3,10 @@ import {
     BillingMode,
     ITable,
     ProjectionType,
+    StreamViewType,
     Table
 } from "aws-cdk-lib/aws-dynamodb";
-import { Code, Function, IFunction, Runtime } from "aws-cdk-lib/aws-lambda";
+import { Code, Function, IFunction, Runtime, StartingPosition } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
 import { ArnFormat, Aws, Duration, Stack } from "aws-cdk-lib";
 import { AwsIotAccountEndpoint, IAwsIotAccountEndpoint } from "./AwsIotAccountEndpoint";
@@ -27,6 +28,7 @@ import { EventType } from "aws-cdk-lib/aws-s3";
 import { LambdaDestination } from "aws-cdk-lib/aws-s3-notifications";
 import * as path from 'path';
 import { ITopic, Topic } from "aws-cdk-lib/aws-sns";
+import { DynamoEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 
 export interface PitsResourceServiceAuthorizationProps {
     readonly issuer: string,
@@ -53,6 +55,10 @@ export interface PitsResourceServiceDomainProps {
     readonly domainName: string;
 }
 
+export interface PitsResourceServiceNotificationProps {
+    readonly baseUrl: string;
+}
+
 export interface IPitsResourceService {
     readonly table: ITable;
     readonly storage: IPitsStorage;
@@ -62,6 +68,7 @@ export interface IPitsResourceService {
     readonly stageId: string;
 
     addDomain(id: string, props: PitsResourceServiceDomainProps): void;
+    addNotification(id: string, props: PitsResourceServiceNotificationProps): void;
 }
 
 export class PitsResourceService extends Construct implements IPitsResourceService {
@@ -92,7 +99,8 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
                 writeCapacity: 1,
                 billingMode: BillingMode.PROVISIONED,
                 tableName: 'PitsResources',
-                timeToLiveAttribute: 'expiresIn'
+                timeToLiveAttribute: 'expiresIn',
+                stream: StreamViewType.NEW_AND_OLD_IMAGES,
             });
             let indexName = 'GS1';
             tableImpl.addGlobalSecondaryIndex({
@@ -304,14 +312,17 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
                 resourceName: '*/*'
             })
         });
+    }
 
-        const indexFunction = new Function(this, 'IndexFunction', {
+    addNotification(id: string, props: PitsResourceServiceNotificationProps): void {
+        const indexFunction = new Function(this, `${id}IndexFunction`, {
             code: Code.fromAsset(path.join(__dirname, 'handlers', 'index_conversion')),
             runtime: Runtime.PYTHON_3_9,
             handler: 'index.handler',
             environment: {
                 'TABLE_NAME': this.table.tableName,
                 'ACCOUNT_ID': Aws.ACCOUNT_ID,
+                // TODO: pull from the storage configuration
                 'EXPIRE_DAYS': '180',
             },
             memorySize: 512,
@@ -319,26 +330,48 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
         });
         indexFunction.addToRolePolicy(new PolicyStatement({
             effect: Effect.ALLOW,
-            actions: [
-                'dynamodb:PutItem'
-            ],
-            resources: [
-                this.table.tableArn
-            ]
+            actions: [ 'dynamodb:PutItem' ],
+            resources: [ this.table.tableArn ]
         }));
         indexFunction.addToRolePolicy(new PolicyStatement({
             effect: Effect.ALLOW,
-            actions: [
-                's3:Get*'
-            ],
-            resources: [
-                this.storage.arnForMotionVideoConvertedObjects()
-            ]
+            actions: [ 's3:Get*' ],
+            resources: [ this.storage.arnForMotionVideoConvertedObjects() ]
         }))
 
-        props.storage.bucket.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(indexFunction), {
+        this.storage.bucket.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(indexFunction), {
             prefix: this.storage.motionVideoConvertedPath + '/'
         });
+
+        const notificationFunction = new Function(this, `${id}AlertFunction`, {
+            code: Code.fromAsset(path.join(__dirname, 'handlers', 'publish_motion')),
+            runtime: Runtime.PYTHON_3_9,
+            handler: 'index.handler',
+            environment: {
+                'TABLE_NAME': this.table.tableName,
+                'ACCOUNT_ID': Aws.ACCOUNT_ID,
+                'TOPIC_ARN': this.topic.topicArn,
+                'BASE_URL': props.baseUrl
+            },
+            memorySize: 512,
+            timeout: Duration.minutes(1),
+        });
+        notificationFunction.addToRolePolicy(new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: [ 'sns:Publish' ],
+            resources: [ this.topic.topicArn ]
+        }));
+        notificationFunction.addToRolePolicy(new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: [ 'dynamodb:GetItem' ],
+            resources: [ this.table.tableArn ]
+        }));
+        notificationFunction.addEventSource(new DynamoEventSource(this.table, {
+            startingPosition: StartingPosition.LATEST,
+            enabled: true,
+            retryAttempts: 10,
+            batchSize: 10,
+        }));
     }
 
     addDomain(id: string, props: PitsResourceServiceDomainProps): void {
