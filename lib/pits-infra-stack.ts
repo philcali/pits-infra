@@ -90,6 +90,6 @@ export class PitsInfraStack extends Stack {
       domainNames: [
         consoleDomain
       ],
-    })
+    });
   }
 }

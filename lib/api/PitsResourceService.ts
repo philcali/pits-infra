@@ -126,7 +126,7 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
             displayName: "Pi In The Sky",
         });
 
-        const captureImagePath = props.captureImagePath || 'capture_images'
+        const captureImagePath = props.captureImagePath || 'capture_images';
         this.lambdaFunction = new Function(this, 'Function', {
             runtime: Runtime.PYTHON_3_9,
             handler: 'pinthesky.resource.api',
