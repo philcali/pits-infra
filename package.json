@@ -9,8 +9,7 @@
     "watch": "tsc -w",
     "test": "jest",
     "submodule": "git submodule update --init",
-    "settings": "echo '{\"seviceEndpoint\":\"\",\"authEndpoint\":\"\",\"clientId\":\"\"}' > lib/assets/console/src/lib/settings.json",
-    "console": "(cd lib/assets/console && npm ci && npm run build)",
+    "console": "(cd lib/assets/console && npm ci && npm run settings && npm run build)",
     "cdk": "cdk"
   },
   "devDependencies": {

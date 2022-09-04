@@ -11,6 +11,17 @@ def is_new_motion(record):
     return record['eventName'] == 'INSERT' and "MotionVideos:" in record['dynamodb']['NewImage']['PK']['S']
 
 
+def camera_groups(table, account_id, thing_name):
+    resp = table.query(
+        KeyConditionExpression="#pk = :pk",
+        ExpressionAttributeNames={"#pk": "PK"},
+        ExpressionAttributeValues={":pk": f'CamerasToGroups:{account_id}:{thing_name}'}
+    )
+    if 'Items' in resp:
+        return json.dumps([item['id'] for item in resp['Items']])
+    return '[]'
+
+
 def handler(event, context):
     print(f'Event payload: {json.dumps(event)}')
     print(f'Event context: {context}')
@@ -38,6 +49,14 @@ def handler(event, context):
                     Subject=f'Motion detected by {display_name}',
                     Message=f'A {duration}sec motion video was recorded by {display_name} on {create_datetime.isoformat()}. Head over to {base_url}/videos/{video_name}/cameras/{thing_name} to view the entire video.',
                     MessageAttributes={
+                        'Group': {
+                            'DataType': 'String.Array',
+                            'StringValue': camera_groups(
+                                table=table,
+                                account_id=account_id,
+                                thing_name=thing_name
+                            )
+                        },
                         'Camera': {
                             'DataType': 'String',
                             'StringValue': thing_name
