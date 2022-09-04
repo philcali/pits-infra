@@ -45,9 +45,10 @@ def handler(event, context):
             duration = record['dynamodb']['NewImage']['duration']['N']
             video_name = record['dynamodb']['NewImage']['motionVideo']['S']
             try:
+                video_link = f'{base_url}/account/videos/{video_name}/cameras/{thing_name}'
                 topic.publish(
                     Subject=f'Motion detected by {display_name}',
-                    Message=f'A {duration}sec motion video was recorded by {display_name} on {create_datetime.isoformat()}. Head over to {base_url}/videos/{video_name}/cameras/{thing_name} to view the entire video.',
+                    Message=f'A {duration}sec motion video was recorded by {display_name} on {create_datetime.isoformat()}. Head over to {video_link} to view the entire video.',
                     MessageAttributes={
                         'Group': {
                             'DataType': 'String.Array',
