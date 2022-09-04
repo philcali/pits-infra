@@ -363,7 +363,7 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
         }));
         notificationFunction.addToRolePolicy(new PolicyStatement({
             effect: Effect.ALLOW,
-            actions: [ 'dynamodb:GetItem' ],
+            actions: [ 'dynamodb:GetItem', 'dynamodb:Query' ],
             resources: [ this.table.tableArn ]
         }));
         notificationFunction.addEventSource(new DynamoEventSource(this.table, {
