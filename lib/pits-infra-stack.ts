@@ -1,4 +1,4 @@
-import { ArnFormat, Stack, StackProps } from 'aws-cdk-lib';
+import { ArnFormat, Duration, Stack, StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
 import { HostedZone } from 'aws-cdk-lib/aws-route53';
@@ -9,6 +9,7 @@ import { SubmoduleCode } from './SubmoduleCode';
 import { PitsConsole } from './console/PitsConsole';
 import { Source } from 'aws-cdk-lib/aws-s3-deployment';
 import * as path from 'path';
+import { PitsDeviceHealth } from './health/PitsDeviceHealth';
 
 const ZONE_ID = 'Z2DL6AR506I4EE';
 const CERTIFICATE_ID = 'f2674298-1642-4284-a9a6-e90b8803ff6e';
@@ -78,6 +79,11 @@ export class PitsInfraStack extends Stack {
 
     resourceService.addNotification('Motion', {
       baseUrl: `https://${consoleDomain}`
+    });
+
+    new PitsDeviceHealth(this, 'CameraHealth', {
+      table: resourceService.table,
+      expiresDuration: Duration.days(14),
     });
 
     new PitsConsole(this, 'Console', {
