@@ -50,6 +50,10 @@ def handler(event, context):
                     Subject=f'Motion detected by {display_name}',
                     Message=f'A {duration}sec motion video was recorded by {display_name} on {create_datetime.isoformat()}. Head over to {video_link} to view the entire video.',
                     MessageAttributes={
+                        'AlertType': {
+                            'DataType': 'String',
+                            'StringValue': 'MOTION'
+                        },
                         'Group': {
                             'DataType': 'String.Array',
                             'StringValue': camera_groups(
