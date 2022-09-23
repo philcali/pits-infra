@@ -81,10 +81,12 @@ export class PitsInfraStack extends Stack {
       baseUrl: `https://${consoleDomain}`
     });
 
-    new PitsDeviceHealth(this, 'CameraHealth', {
+    const health = new PitsDeviceHealth(this, 'CameraHealth', {
       table: resourceService.table,
       expiresDuration: Duration.days(14),
     });
+
+    health.addHealthTimeout('Check');
 
     new PitsConsole(this, 'Console', {
       sources: [

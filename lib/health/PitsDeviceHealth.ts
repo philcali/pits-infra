@@ -1,8 +1,12 @@
 import { ArnFormat, Duration, Stack } from "aws-cdk-lib";
 import { ITable } from "aws-cdk-lib/aws-dynamodb";
+import { Rule, Schedule } from "aws-cdk-lib/aws-events";
+import { LambdaFunction } from "aws-cdk-lib/aws-events-targets";
 import { Effect, IRole, PolicyDocument, PolicyStatement, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { CfnTopicRule } from "aws-cdk-lib/aws-iot";
+import { Code, Function, Runtime } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
+import * as path from 'path';
 
 export interface PitsDeviceHealthProps {
     readonly inputTopic?: string;
@@ -11,10 +15,16 @@ export interface PitsDeviceHealthProps {
     readonly expiresDuration?: Duration;
 }
 
+export interface PitsHealthTimeoutProps {
+    readonly timeout?: Duration;
+}
+
 export interface IPitsDeviceHealth {
     readonly rulesRole: IRole;
     readonly updateLatestRuleName: string;
     readonly updateIndexRuleName: string;
+
+    addHealthTimeout(id: string, props?: PitsHealthTimeoutProps): void;
 }
 
 export class PitsDeviceHealth extends Construct implements IPitsDeviceHealth {
@@ -23,9 +33,12 @@ export class PitsDeviceHealth extends Construct implements IPitsDeviceHealth {
     readonly updateIndexRuleName: string;
     readonly republishRuleName: string;
 
+    private readonly table: ITable;
+
     constructor(scope: Construct, id: string, props: PitsDeviceHealthProps) {
         super(scope, id);
 
+        this.table = props.table;
         this.republishRuleName = `${id}RuleFanOut`;
         this.updateLatestRuleName = `${id}RuleLatest`;
         this.updateIndexRuleName = `${id}RuleIndex`;
@@ -65,7 +78,7 @@ export class PitsDeviceHealth extends Construct implements IPitsDeviceHealth {
                                 'dynamodb:PutItem'
                             ],
                             resources: [
-                                props.table.tableArn
+                                this.table.tableArn
                             ]
                         })
                     ]
@@ -115,7 +128,7 @@ export class PitsDeviceHealth extends Construct implements IPitsDeviceHealth {
                     {
                         dynamoDBv2: {
                             putItem: {
-                                tableName: props.table.tableName
+                                tableName: this.table.tableName
                             },
                             roleArn: this.rulesRole.roleArn
                         }
@@ -139,7 +152,7 @@ export class PitsDeviceHealth extends Construct implements IPitsDeviceHealth {
                     {
                         dynamoDBv2: {
                             putItem: {
-                                tableName: props.table.tableName
+                                tableName: this.table.tableName
                             },
                             roleArn: this.rulesRole.roleArn
                         }
@@ -148,5 +161,38 @@ export class PitsDeviceHealth extends Construct implements IPitsDeviceHealth {
                 errorAction
             }
         });
+    }
+
+    addHealthTimeout(id: string, props?: PitsHealthTimeoutProps): void {
+        const rate = props?.timeout || Duration.minutes(62);
+        const rule = new Rule(this, `${id}EventRule`, {
+            enabled: true,
+            schedule: Schedule.rate(rate)
+        });
+
+        const handler = new Function(this, `${id}Function`, {
+            handler: 'index.handler',
+            runtime: Runtime.PYTHON_3_9,
+            code: Code.fromAsset(path.join(__dirname, 'handlers', 'check_health')),
+            memorySize: 512,
+            timeout: Duration.minutes(1),
+            environment: {
+                'TABLE_NAME': this.table.tableName,
+                'RATE_IN_SECONDS': rate.toSeconds().toString()
+            }
+        });
+
+        handler.addToRolePolicy(new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: [
+                'dynamodb:Query',
+                'dynamodb:PutItem'
+            ],
+            resources: [
+                this.table.tableArn
+            ]
+        }));
+
+        rule.addTarget(new LambdaFunction(handler));
     }
 }
