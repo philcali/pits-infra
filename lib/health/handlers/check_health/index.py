@@ -24,7 +24,7 @@ def handler(event, context):
     account_id = os.getenv('ACCOUNT_ID')
     now = datetime.utcnow()
     for item in query_latest_health(table, account_id):
-        create_time = datetime.fromtimestamp(float(item['createTime']))
+        create_time = datetime.utcfromtimestamp(float(item['createTime']))
         delta = now - create_time
         if delta.total_seconds() > rate:
             item['status'] = 'UNHEALTHY'

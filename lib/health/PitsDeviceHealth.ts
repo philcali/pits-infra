@@ -1,4 +1,4 @@
-import { ArnFormat, Duration, Stack } from "aws-cdk-lib";
+import { ArnFormat, Aws, Duration, Stack } from "aws-cdk-lib";
 import { ITable } from "aws-cdk-lib/aws-dynamodb";
 import { Rule, Schedule } from "aws-cdk-lib/aws-events";
 import { LambdaFunction } from "aws-cdk-lib/aws-events-targets";
@@ -178,6 +178,7 @@ export class PitsDeviceHealth extends Construct implements IPitsDeviceHealth {
             timeout: Duration.minutes(1),
             environment: {
                 'TABLE_NAME': this.table.tableName,
+                'ACCOUNT_ID': Aws.ACCOUNT_ID,
                 'RATE_IN_SECONDS': rate.toSeconds().toString()
             }
         });
