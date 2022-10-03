@@ -206,12 +206,23 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
         this.lambdaFunction.addToRolePolicy(new PolicyStatement({
             effect: Effect.ALLOW,
             actions: [
+                // Metadata and association
                 'iot:DescribeThing',
                 'iot:ListThingGroups',
                 'iot:ListThingsInThingGroup',
+                // Events and Confiuguration
                 'iot:GetThingShadow',
                 'iot:UpdateThingShadow',
                 'iot:Publish',
+                // Jobs
+                'iot:CreateJob',
+                'iot:UpdateJob',
+                'iot:CancelJob',
+                'iot:CancelJobExecution',
+                'iot:ListJobExecutionsForJob',
+                'iot:DescribeJob',
+                'iot:DescribeJobExecution',
+                // Notification management
                 "sns:GetSubscriptionAttributes",
                 "sns:SetSubscriptionAttributes",
                 "sns:Unsubscribe"
