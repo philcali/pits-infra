@@ -219,6 +219,7 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
                 'iot:UpdateJob',
                 'iot:CancelJob',
                 'iot:CancelJobExecution',
+                'iot:DeleteJob',
                 'iot:ListJobExecutionsForJob',
                 'iot:DescribeJob',
                 'iot:DescribeJobExecution',
