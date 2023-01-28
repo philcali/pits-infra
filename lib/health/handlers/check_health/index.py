@@ -31,4 +31,4 @@ def handler(event, context):
             item['thingName'] = item['thing_name']
             item['updateTime'] = floor(now.timestamp())
             # TODO: update the historical one...?
-            table.putItem(Item=item)
+            table.put_item(Item=item)
