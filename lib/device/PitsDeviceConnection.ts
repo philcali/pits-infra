@@ -17,7 +17,15 @@ export interface PitsDeviceConnectionProps {
     readonly motionVideoConversion?: PitsConversionFunctionProps
 }
 
-export class PitsDeviceConnection extends Construct {
+export interface IPitsDeviceConnection {
+    readonly storage: IPitsStorage;
+    readonly role: IPitsRole;
+    readonly roleAlias: IPitsRoleAlias;
+    readonly thingPolicy: IPitsThingPolicy;
+    readonly conversionFunction?: IFunction;
+}
+
+export class PitsDeviceConnection extends Construct implements IPitsDeviceConnection {
     readonly storage: IPitsStorage;
     readonly role: IPitsRole;
     readonly roleAlias: IPitsRoleAlias;

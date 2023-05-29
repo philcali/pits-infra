@@ -1,18 +1,165 @@
 import { ArnFormat, Duration, Stack, StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
-import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
-import { HostedZone } from 'aws-cdk-lib/aws-route53';
-import { PitsDeviceConnection } from './device/PitsDeviceConnection';
+import { Certificate, ICertificate } from 'aws-cdk-lib/aws-certificatemanager';
+import { HostedZone, IHostedZone } from 'aws-cdk-lib/aws-route53';
+import { IPitsDeviceConnection, PitsDeviceConnection } from './device/PitsDeviceConnection';
 import { PitsAuthorization } from './auth/PitsAuthorization';
-import { PitsResourceService } from './api/PitsResourceService';
+import { IPitsResourceService, PitsResourceService } from './api/PitsResourceService';
 import { SubmoduleCode } from './SubmoduleCode';
 import { PitsConsole } from './console/PitsConsole';
 import { Source } from 'aws-cdk-lib/aws-s3-deployment';
+import { IPitsDeviceHealth, PitsDeviceHealth } from './health/PitsDeviceHealth';
+import { IPitsAuthorization } from './auth/PitsAuthorization';
+import { PitsStorage } from './device/PitsStorage';
 import * as path from 'path';
-import { PitsDeviceHealth } from './health/PitsDeviceHealth';
 
-const ZONE_ID = 'Z2DL6AR506I4EE';
-const CERTIFICATE_ID = 'f2674298-1642-4284-a9a6-e90b8803ff6e';
+const ZONE_NAME = 'pits.philcali.me';
+const ZONE_ID = 'Z0039617ZTGC84RIQHA5';
+const CERTIFICATE_ID = 'a8492ec1-ec0e-42e2-b782-2491a6e8c5f1';
+
+export interface PitsDeviceConnectionStackProps extends StackProps {
+  readonly bucketName: string;
+}
+
+export class PitsDeviceConnectionStack extends Stack {
+  readonly deviceConnection: IPitsDeviceConnection;
+
+  constructor(scope: Construct, id: string, props: PitsDeviceConnectionStackProps) {
+    super(scope, id, {
+      stackName: 'PitsDeviceConnection',
+      ...props
+    });
+
+    this.deviceConnection = new PitsDeviceConnection(this, 'DeviceConnection', {
+      bucketName: props.bucketName,
+      enableDefaultMotionVideoConversion: true
+    });
+    
+  }
+}
+
+export interface PitsReachabilityProps {
+  readonly consoleDomain: string;
+  readonly apiDomain: string;
+  readonly certificate: ICertificate;
+  readonly hostedZone: IHostedZone;
+}
+
+export type PitsAuthorizationStackProps = StackProps & PitsReachabilityProps;
+
+export class PitsAuthorizationStack extends Stack {
+  readonly authorization: IPitsAuthorization;
+  constructor(scope: Construct, id: string, props: PitsAuthorizationStackProps) {
+    super(scope, id, {
+      stackName: 'PitsAuthorization',
+      ...props
+    });
+
+    const authorization = new PitsAuthorization(this, 'Authorization', {
+      enableDevelopmentOrigin: true,
+      customOrigins: [
+        `https://${props.apiDomain}`,
+        `https://${props.consoleDomain}`
+      ]
+    });
+    this.authorization = authorization;
+
+    authorization.addDomain('CustomDomain', {
+      certificate: props.certificate,
+      hostedZone: props.hostedZone,
+      domainName: `auth.${ZONE_NAME}`,
+      createARecord: true
+    });
+  }
+}
+
+export interface PitsApiStackProps extends StackProps, PitsReachabilityProps {
+  readonly authorization: IPitsAuthorization;
+  readonly captureImagesPath: string;
+  readonly bucketName: string;
+  readonly motionVideosPath: string;
+  readonly motionVideosCapturedPath: string;
+}
+
+export class PitsApiStack extends Stack {
+  readonly resourceService: IPitsResourceService;
+  readonly health: IPitsDeviceHealth;
+
+  constructor(scope: Construct, id: string, props: PitsApiStackProps) {
+    super(scope, id, {
+      stackName: 'PitsApi',
+      ...props
+    });
+
+    const resourceService = new PitsResourceService(this, 'ResourceService', {
+      enableDevelopmentOrigin: true,
+      storage: PitsStorage.fromImportProps(this, 'ImportedPitsStorage', {
+        bucketName: props.bucketName,
+        motionVideoPath: props.motionVideosPath,
+        motionVideoConvertedPath: props.motionVideosCapturedPath
+      }),
+      captureImagePath: props.captureImagesPath,
+      consoleOrigin: `https://${props.consoleDomain}`,
+      functionCode: new SubmoduleCode(path.join(__dirname, 'assets', 'api'), {
+          moduleName: 'lib/assets/api',
+          buildCommand: './dev.make-zip.sh',
+          buildOutput: 'build_function.zip'
+      }),
+      authorization: {
+        issuer: props.authorization.userPool.userPoolProviderUrl,
+        audience: [
+          props.authorization.defaultUserClient.userPoolClientId
+        ]
+      }
+    });
+    this.resourceService = resourceService;
+
+    resourceService.addDomain('CustonDomain', {
+      certificate: props.certificate,
+      hostedZone: props.hostedZone,
+      domainName: props.apiDomain
+    });
+
+    resourceService.addNotification('Motion', {
+      baseUrl: `https://${props.consoleDomain}`
+    });
+  
+    const health = new PitsDeviceHealth(this, 'CameraHealth', {
+      table: resourceService.table,
+      expiresDuration: Duration.days(14),
+    });
+    this.health = health;
+
+    health.addHealthTimeout('Check');
+  }
+}
+
+export interface PitsConsoleStackProps extends StackProps, PitsReachabilityProps {
+  readonly bucketName: string;
+}
+
+export class PitsConsoleStack extends Stack {
+  readonly console: PitsConsole;
+
+  constructor(scope: Construct, id: string, props: PitsConsoleStackProps) {
+    super(scope, id, {
+      stackName: 'PitsConsole',
+      ...props
+    });
+
+    this.console = new PitsConsole(this, 'Console', {
+      sources: [
+        Source.asset(path.join(__dirname, 'assets', 'console', 'build'))
+      ],
+      bucketName: props.bucketName,
+      certificate: props.certificate,
+      hostedZone: props.hostedZone,
+      domainNames: [
+        props.consoleDomain
+      ],
+    });
+  }
+}
 
 export class PitsInfraStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -25,79 +172,43 @@ export class PitsInfraStack extends Stack {
       arnFormat: ArnFormat.SLASH_RESOURCE_NAME
     }));
 
-    const zoneName = "pinthesky.com";
     const hostedZone = HostedZone.fromHostedZoneAttributes(this, 'PitsHostedZone', {
       hostedZoneId: ZONE_ID,
-      zoneName
+      zoneName: ZONE_NAME
     });
 
-    const deviceConnection = new PitsDeviceConnection(this, 'DeviceConnection', {
-      bucketName: 'philcali-pinthesky-storage',
-      enableDefaultMotionVideoConversion: true
+    const apiDomain = `api.${ZONE_NAME}`;
+    const consoleDomain = `app.${ZONE_NAME}`;
+
+    const deviceConnectionStack = new PitsDeviceConnectionStack(this, 'DeviceConnectionStack', {
+      bucketName: 'philcali-pinthesky-storage'
     });
 
-    const apiDomain = `api.${zoneName}`;
-    const consoleDomain = `app.${zoneName}`;
-    const authorization = new PitsAuthorization(this, 'Authorization', {
-      enableDevelopmentOrigin: true,
-      customOrigins: [
-        `https://${apiDomain}`,
-        `https://${consoleDomain}`
-      ]
-    });
-
-    authorization.addDomain('CustomDomain', {
+    const authorizationStack = new PitsAuthorizationStack(this, 'AuthorizationStack', {
+      apiDomain,
       certificate,
       hostedZone,
-      domainName: `auth.${zoneName}`,
-      createARecord: true
+      consoleDomain
     });
 
-    const resourceService = new PitsResourceService(this, 'ResourceService', {
-      enableDevelopmentOrigin: true,
-      storage: deviceConnection.storage,
-      captureImagePath: deviceConnection.role.captureImagesPath,
-      consoleOrigin: `https://${consoleDomain}`,
-      functionCode: new SubmoduleCode(path.join(__dirname, 'assets', 'api'), {
-          moduleName: 'lib/assets/api',
-          buildCommand: './dev.make-zip.sh',
-          buildOutput: 'build_function.zip'
-      }),
-      authorization: {
-        issuer: authorization.userPool.userPoolProviderUrl,
-        audience: [
-          authorization.defaultUserClient.userPoolClientId
-        ]
-      }
-    });
-
-    resourceService.addDomain('CustonDomain', {
+    new PitsApiStack(this, 'ApiStack', {
+      apiDomain,
+      consoleDomain,
       certificate,
       hostedZone,
-      domainName: apiDomain
+      authorization: authorizationStack.authorization,
+      bucketName: deviceConnectionStack.deviceConnection.storage.bucket.bucketName,
+      motionVideosPath: deviceConnectionStack.deviceConnection.storage.motionVideoPath,
+      motionVideosCapturedPath: deviceConnectionStack.deviceConnection.storage.motionVideoConvertedPath,
+      captureImagesPath: deviceConnectionStack.deviceConnection.role.captureImagesPath
     });
 
-    resourceService.addNotification('Motion', {
-      baseUrl: `https://${consoleDomain}`
-    });
-
-    const health = new PitsDeviceHealth(this, 'CameraHealth', {
-      table: resourceService.table,
-      expiresDuration: Duration.days(14),
-    });
-
-    health.addHealthTimeout('Check');
-
-    new PitsConsole(this, 'Console', {
-      sources: [
-        Source.asset(path.join(__dirname, 'assets', 'console', 'build'))
-      ],
-      bucketName: 'philcali-pits-console',
+    new PitsConsoleStack(this, 'ConsoleStack', {
+      apiDomain,
+      consoleDomain,
       certificate,
       hostedZone,
-      domainNames: [
-        consoleDomain
-      ],
+      bucketName: 'philcali-pits-console'
     });
   }
 }

@@ -35,51 +35,16 @@ export interface IPitsStorage {
     arnForMotionVideoConvertedObjects(): string;
 }
 
-export class PitsStorage extends Construct implements IPitsStorage {
+export interface ImportPitsStorageProps {
+    readonly bucketName: string;
+    readonly motionVideoPath: string;
+    readonly motionVideoConvertedPath: string;
+}
+
+abstract class PitsStorageBase extends Construct implements IPitsStorage {
     readonly bucket: IBucket;
     readonly motionVideoPath: string;
     readonly motionVideoConvertedPath: string;
-
-    constructor(scope: Construct, id: string, props?: PitsStorageProps) {
-        super(scope, id);
-
-        this.motionVideoPath = props?.motionVideoPath || 'motion_videos';
-        this.motionVideoConvertedPath = props?.motionVideoConvertedPath || 'motion_videos_converted';
-
-        let lifecycleRules: Array<LifecycleRule> | undefined = undefined;
-        if (props?.expireMotionVideos === undefined || props.expireMotionVideos === true) {
-            lifecycleRules = [
-                {
-                    enabled: true,
-                    prefix: `${this.motionVideoPath}/`,
-                    expiration: Duration.days(30)
-                },
-                {
-                    enabled: true,
-                    prefix: `${this.motionVideoConvertedPath}/`,
-                    transitions: [
-                        {
-                            transitionAfter: Duration.days(30),
-                            storageClass: StorageClass.INFREQUENT_ACCESS
-                        },
-                        {
-                            transitionAfter: Duration.days(90),
-                            storageClass: StorageClass.GLACIER
-                        },
-                        {
-                            transitionAfter: Duration.days(180),
-                            storageClass: StorageClass.DEEP_ARCHIVE
-                        }
-                    ]
-                }
-            ];
-        }
-
-        this.bucket = new Bucket(this, 'Bucket', {
-            bucketName: props?.bucketName,
-            lifecycleRules
-        });
-    }
 
     addConversionFunction(props?: PitsConversionFunctionProps): IFunction {
         const conversionImage = new DockerImageAsset(this, 'ConvertImage', {
@@ -171,4 +136,70 @@ export class PitsStorage extends Construct implements IPitsStorage {
     arnForMotionVideoConvertedObjects(): string {
         return this.bucket.arnForObjects(`${this.motionVideoConvertedPath}/*`);
     }
+}
+
+class ImportPitsStorage extends PitsStorageBase {
+    readonly bucket: IBucket;
+    readonly motionVideoPath: string;
+    readonly motionVideoConvertedPath: string;
+
+    constructor(scope: Construct, id: string, props: ImportPitsStorageProps) {
+        super(scope, id);
+
+        this.bucket = Bucket.fromBucketName(this, 'ImportBucket', props.bucketName);
+        this.motionVideoPath = props.motionVideoPath;
+        this.motionVideoConvertedPath = props.motionVideoConvertedPath;
+    }
+}
+
+export class PitsStorage extends PitsStorageBase {
+    readonly bucket: IBucket;
+    readonly motionVideoPath: string;
+    readonly motionVideoConvertedPath: string;
+
+    static fromImportProps(scope: Construct, id: string, props: ImportPitsStorageProps) {
+        return new ImportPitsStorage(scope, id, props);
+    }
+
+    constructor(scope: Construct, id: string, props?: PitsStorageProps) {
+        super(scope, id);
+
+        this.motionVideoPath = props?.motionVideoPath || 'motion_videos';
+        this.motionVideoConvertedPath = props?.motionVideoConvertedPath || 'motion_videos_converted';
+
+        let lifecycleRules: Array<LifecycleRule> | undefined = undefined;
+        if (props?.expireMotionVideos === undefined || props.expireMotionVideos === true) {
+            lifecycleRules = [
+                {
+                    enabled: true,
+                    prefix: `${this.motionVideoPath}/`,
+                    expiration: Duration.days(30)
+                },
+                {
+                    enabled: true,
+                    prefix: `${this.motionVideoConvertedPath}/`,
+                    transitions: [
+                        {
+                            transitionAfter: Duration.days(30),
+                            storageClass: StorageClass.INFREQUENT_ACCESS
+                        },
+                        {
+                            transitionAfter: Duration.days(90),
+                            storageClass: StorageClass.GLACIER
+                        },
+                        {
+                            transitionAfter: Duration.days(180),
+                            storageClass: StorageClass.DEEP_ARCHIVE
+                        }
+                    ]
+                }
+            ];
+        }
+
+        this.bucket = new Bucket(this, 'Bucket', {
+            bucketName: props?.bucketName,
+            lifecycleRules
+        });
+    }
+
 }
