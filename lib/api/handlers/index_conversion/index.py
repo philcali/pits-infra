@@ -20,8 +20,11 @@ def handler(event, context):
             Bucket=record['s3']['bucket']['name'],
             Key=record['s3']['object']['key'])
         duration = 0
+        trigger = "motion"
         if "x-amzn-meta-duration" in h_obj['Metadata']:
             duration = floor(float(h_obj['Metadata']['x-amzn-meta-duration']))
+        if "x-amzn-meta-trigger" in h_obj['Metadata'] and h_obj['Metadata']['x-amzn-meta-trigger'] != 'None':
+            trigger = h_obj['Metadata']['x-amzn-meta-trigger']
         split_pieces = record['s3']['object']['key'].split('/')
         thing_name = split_pieces[-2]
         video_name = split_pieces[-1]
@@ -35,6 +38,7 @@ def handler(event, context):
                         'PK': f'MotionVideos:{account_id}:{thing_name}',
                         'SK': video_name,
                         'GS1-PK': f'MotionVideos:{account_id}',
+                        'trigger': trigger,
                         'thingName': thing_name,
                         'motionVideo': video_name,
                         'duration': duration,
