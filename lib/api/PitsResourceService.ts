@@ -404,7 +404,7 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
             domainName: props.domainName
         });
 
-        mappingResource.addDependsOn(domainCreation);
+        mappingResource.addDependency(domainCreation);
 
         new CnameRecord(this, `${id}CnameRecord`, {
             domainName: domainCreation.attrRegionalDomainName,
