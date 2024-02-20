@@ -329,7 +329,7 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
     addNotification(id: string, props: PitsResourceServiceNotificationProps): void {
         const indexFunction = new Function(this, `${id}IndexFunction`, {
             code: Code.fromAsset(path.join(__dirname, 'handlers', 'index_conversion')),
-            runtime: Runtime.PYTHON_3_9,
+            runtime: Runtime.PYTHON_3_12,
             handler: 'index.handler',
             environment: {
                 'TABLE_NAME': this.table.tableName,
@@ -357,7 +357,7 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
 
         const notificationFunction = new Function(this, `${id}AlertFunction`, {
             code: Code.fromAsset(path.join(__dirname, 'handlers', 'publish_motion')),
-            runtime: Runtime.PYTHON_3_9,
+            runtime: Runtime.PYTHON_3_12,
             handler: 'index.handler',
             environment: {
                 'TABLE_NAME': this.table.tableName,

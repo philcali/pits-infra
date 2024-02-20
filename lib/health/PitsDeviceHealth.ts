@@ -172,7 +172,7 @@ export class PitsDeviceHealth extends Construct implements IPitsDeviceHealth {
 
         const handler = new Function(this, `${id}Function`, {
             handler: 'index.handler',
-            runtime: Runtime.PYTHON_3_9,
+            runtime: Runtime.PYTHON_3_12,
             code: Code.fromAsset(path.join(__dirname, 'handlers', 'check_health')),
             memorySize: 512,
             timeout: Duration.minutes(1),

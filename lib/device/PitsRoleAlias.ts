@@ -22,7 +22,8 @@ export class PitsRoleAlias extends Construct implements IPitsRoleAlias {
 
         let stack = Stack.of(scope);
         this.roleAliasName = props.roleAliasName || 'PinTheSkyRoleAlias';
-        const roleAlias = new AwsCustomResource(this, 'RoleAlias', {
+        new AwsCustomResource(this, 'RoleAlias', {
+            installLatestAwsSdk: true,
             policy: {
                 statements: [
                 new PolicyStatement({
