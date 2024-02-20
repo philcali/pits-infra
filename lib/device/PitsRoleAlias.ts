@@ -1,4 +1,4 @@
-import { Stack } from "aws-cdk-lib";
+import { ArnFormat, Stack } from "aws-cdk-lib";
 import { Effect, IRole, PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { AwsCustomResource, PhysicalResourceId } from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
@@ -69,6 +69,11 @@ export class PitsRoleAlias extends Construct implements IPitsRoleAlias {
             }
         });
 
-        this.roleAliasArn = roleAlias.getResponseField('roleAliasArn');
+        this.roleAliasArn = stack.formatArn({
+            service: 'iot',
+            resource: 'rolealias',
+            arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+            resourceName: this.roleAliasName
+        });
     }
 }
