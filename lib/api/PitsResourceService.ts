@@ -310,7 +310,7 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
             stageName: '$default',
             autoDeploy: true
         });
-        resourceStage.addDependsOn(resourceAuthRoute);
+        resourceStage.addDependency(resourceAuthRoute);
         this.stageId = resourceStage.ref;
 
         const stack = Stack.of(this);
@@ -404,7 +404,7 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
             domainName: props.domainName
         });
 
-        mappingResource.addDependsOn(domainCreation);
+        mappingResource.addDependency(domainCreation);
 
         new CnameRecord(this, `${id}CnameRecord`, {
             domainName: domainCreation.attrRegionalDomainName,
