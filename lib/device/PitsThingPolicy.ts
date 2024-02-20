@@ -118,6 +118,7 @@ export class PitsThingPolicy extends Construct implements IPitsThingPolicy {
         };
 
         new AwsCustomResource(this, 'ThingPolicy', {
+            installLatestAwsSdk: true,
             policy: {
                 statements: [
                 new PolicyStatement({

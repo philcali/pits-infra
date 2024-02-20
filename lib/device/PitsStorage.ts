@@ -61,6 +61,21 @@ abstract class PitsStorageBase extends Construct implements IPitsStorage {
 
         // Due to the limitation of how tagging digests are rotated, we need a new
         // Custom resource when the image updates, with a "no-op" delete.
+        const sdkCallPartial = {
+            action: 'describeImages',
+            service: 'ECR',
+            parameters: {
+                repositoryName: ecrRepo.repositoryName,
+                filter: {
+                    tagStatus: 'TAGGED'
+                },
+                imageIds: [
+                    {
+                        imageTag: 'latest'
+                    }
+                ]
+            },
+        };
         const taggedDigest = new AwsCustomResource(this, 'ConvertDigest', {
             policy: AwsCustomResourcePolicy.fromSdkCalls({
                 resources: [
@@ -68,21 +83,12 @@ abstract class PitsStorageBase extends Construct implements IPitsStorage {
                 ]
             }),
             onCreate: {
+                ...sdkCallPartial,
                 physicalResourceId: PhysicalResourceId.of(conversionImage.assetHash),
-                action: 'describeImages',
-                service: 'ECR',
-                parameters: {
-                    repositoryName: ecrRepo.repositoryName,
-                    filter: {
-                        tagStatus: 'TAGGED'
-                    },
-                    imageIds: [
-                        {
-                            imageTag: 'latest'
-                        }
-                    ]
-                },
             },
+            onUpdate: {
+                ...sdkCallPartial,
+            }
         });
         taggedDigest.node.addDependency(conversionEcrDeployment);
 

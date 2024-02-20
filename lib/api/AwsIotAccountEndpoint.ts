@@ -19,7 +19,15 @@ export class AwsIotAccountEndpoint extends Construct implements IAwsIotAccountEn
         super(scope, id);
 
         this.endpointType = props?.endpointType || 'iot:data-ats';
+        const sdkPartial = {
+            service: 'Iot',
+            action: 'describeEndpoint',
+            parameters: {
+                endpointType: this.endpointType
+            }
+        };
         const endpoint = new AwsCustomResource(this, 'Address', {
+            installLatestAwsSdk: true,
             policy: {
                 statements: [
                 new PolicyStatement({
@@ -34,13 +42,12 @@ export class AwsIotAccountEndpoint extends Construct implements IAwsIotAccountEn
                 ]
             },
             onCreate: {
+                ...sdkPartial,
                 physicalResourceId: PhysicalResourceId.of('iot' + id),
-                service: 'Iot',
-                action: 'describeEndpoint',
-                parameters: {
-                    endpointType: this.endpointType
-                }
             },
+            onUpdate: {
+                ...sdkPartial,
+            }
         });
 
         this.endpointAddress = endpoint.getResponseField('endpointAddress');
