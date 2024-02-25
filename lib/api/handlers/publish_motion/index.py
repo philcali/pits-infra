@@ -8,7 +8,7 @@ ddb = boto3.resource('dynamodb')
 
 
 def is_new_motion(record, account_id):
-    return record['eventName'] == 'INSERT' and f'MotionVideos:{account_id}:' in record['dynamodb']['NewImage']['PK']['S'] and record['dynamodb']['NewImage']['trigger']['S'] != 'manual'
+    return record['eventName'] == 'INSERT' and f'MotionVideos:{account_id}:' in record['dynamodb']['NewImage']['PK']['S'] and record['dynamodb']['NewImage']['trigger']['S'] == 'motion'
 
 
 def is_unhealthy_bit(record, account_id):
