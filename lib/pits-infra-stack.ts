@@ -11,11 +11,14 @@ import { Source } from 'aws-cdk-lib/aws-s3-deployment';
 import { IPitsDeviceHealth, PitsDeviceHealth } from './health/PitsDeviceHealth';
 import { IPitsAuthorization } from './auth/PitsAuthorization';
 import { PitsStorage } from './device/PitsStorage';
+import { 
+  ZONE_NAME,
+  ZONE_ID,
+  CERTIFICATE_ID,
+  CONSOLE_BUCKET_NAME,
+  DEVICE_BUCKET_NAME
+} from './constants';
 import * as path from 'path';
-
-const ZONE_NAME = 'pits.philcali.me';
-const ZONE_ID = 'Z0039617ZTGC84RIQHA5';
-const CERTIFICATE_ID = 'a8492ec1-ec0e-42e2-b782-2491a6e8c5f1';
 
 export interface PitsDeviceConnectionStackProps extends StackProps {
   readonly bucketName: string;
@@ -39,10 +42,10 @@ export class PitsDeviceConnectionStack extends Stack {
 }
 
 export interface PitsReachabilityProps {
-  readonly consoleDomain: string;
-  readonly apiDomain: string;
-  readonly certificate: ICertificate;
-  readonly hostedZone: IHostedZone;
+  readonly consoleDomain?: string;
+  readonly apiDomain?: string;
+  readonly certificate?: ICertificate;
+  readonly hostedZone?: IHostedZone;
 }
 
 export type PitsAuthorizationStackProps = StackProps & PitsReachabilityProps;
@@ -55,21 +58,24 @@ export class PitsAuthorizationStack extends Stack {
       ...props
     });
 
+    let customOrigins = [props.apiDomain, props.consoleDomain]
+      .filter(domain => domain !== undefined)
+      .map(domain => `https://${domain}`);
+    
     const authorization = new PitsAuthorization(this, 'Authorization', {
       enableDevelopmentOrigin: true,
-      customOrigins: [
-        `https://${props.apiDomain}`,
-        `https://${props.consoleDomain}`
-      ]
+      customOrigins,
     });
     this.authorization = authorization;
 
-    authorization.addDomain('CustomDomain', {
-      certificate: props.certificate,
-      hostedZone: props.hostedZone,
-      domainName: `auth.${ZONE_NAME}`,
-      createARecord: true
-    });
+    if (props.certificate && props.hostedZone) {
+      authorization.addDomain('CustomDomain', {
+        certificate: props.certificate,
+        hostedZone: props.hostedZone,
+        domainName: `auth.${ZONE_NAME}`,
+        createARecord: true
+      });
+    }
   }
 }
 
@@ -114,15 +120,19 @@ export class PitsApiStack extends Stack {
     });
     this.resourceService = resourceService;
 
-    resourceService.addDomain('CustonDomain', {
-      certificate: props.certificate,
-      hostedZone: props.hostedZone,
-      domainName: props.apiDomain
-    });
-
-    resourceService.addNotification('Motion', {
-      baseUrl: `https://${props.consoleDomain}`
-    });
+    if (props.certificate && props.hostedZone && props.apiDomain) {
+      resourceService.addDomain('CustonDomain', {
+        certificate: props.certificate,
+        hostedZone: props.hostedZone,
+        domainName: props.apiDomain
+      });
+    }
+  
+    if (props.consoleDomain) {
+      resourceService.addNotification('Motion', {
+        baseUrl: `https://${props.consoleDomain}`
+      });
+    }
   
     const health = new PitsDeviceHealth(this, 'CameraHealth', {
       table: resourceService.table,
@@ -147,6 +157,10 @@ export class PitsConsoleStack extends Stack {
       ...props
     });
 
+    let domainNames: undefined | string[]
+    if (props.consoleDomain) {
+      domainNames = [props.consoleDomain];
+    }
     this.console = new PitsConsole(this, 'Console', {
       sources: [
         Source.asset(path.join(__dirname, 'assets', 'console', 'build'))
@@ -154,9 +168,7 @@ export class PitsConsoleStack extends Stack {
       bucketName: props.bucketName,
       certificate: props.certificate,
       hostedZone: props.hostedZone,
-      domainNames: [
-        props.consoleDomain
-      ],
+      domainNames,
     });
   }
 }
@@ -165,23 +177,31 @@ export class PitsInfraStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    const certificate = Certificate.fromCertificateArn(this, 'PitsShortenerCertificate', this.formatArn({
-      service: 'acm',
-      resource: 'certificate',
-      resourceName: CERTIFICATE_ID,
-      arnFormat: ArnFormat.SLASH_RESOURCE_NAME
-    }));
+    let certificate: undefined | ICertificate;
+    let hostedZone: undefined | IHostedZone;
+    let apiDomain: undefined | string;
+    let consoleDomain: undefined | string;
 
-    const hostedZone = HostedZone.fromHostedZoneAttributes(this, 'PitsHostedZone', {
-      hostedZoneId: ZONE_ID,
-      zoneName: ZONE_NAME
-    });
+    if (CERTIFICATE_ID) {
+      certificate = Certificate.fromCertificateArn(this, 'PitsShortenerCertificate', this.formatArn({
+        service: 'acm',
+        resource: 'certificate',
+        resourceName: CERTIFICATE_ID,
+        arnFormat: ArnFormat.SLASH_RESOURCE_NAME
+      }));
+    }
 
-    const apiDomain = `api.${ZONE_NAME}`;
-    const consoleDomain = `app.${ZONE_NAME}`;
+    if (ZONE_ID && ZONE_NAME) {
+      hostedZone = HostedZone.fromHostedZoneAttributes(this, 'PitsHostedZone', {
+        hostedZoneId: ZONE_ID,
+        zoneName: ZONE_NAME
+      });
+      apiDomain = `api.${ZONE_NAME}`;
+      consoleDomain = `app.${ZONE_NAME}`;
+    }
 
     const deviceConnectionStack = new PitsDeviceConnectionStack(this, 'DeviceConnectionStack', {
-      bucketName: 'philcali-pinthesky-storage'
+      bucketName: DEVICE_BUCKET_NAME,
     });
 
     const authorizationStack = new PitsAuthorizationStack(this, 'AuthorizationStack', {
@@ -208,7 +228,7 @@ export class PitsInfraStack extends Stack {
       consoleDomain,
       certificate,
       hostedZone,
-      bucketName: 'philcali-pits-console'
+      bucketName: CONSOLE_BUCKET_NAME,
     });
   }
 }

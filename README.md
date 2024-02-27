@@ -8,6 +8,16 @@ There's really nothing unique to this infra except that it is using a bucket tha
 I own. With a little work, this can made into a constructs library, or something
 a bit more reusable.
 
+## Re-use
+
+Replace the `const` fields in `constants.ts` to make the infrastructure
+your own. The project assumes you have purchases a domain name through
+AWS and created an associated ACM wilcard. The price of a hosted zone
+in AWS will be 50 cents. By replacing the certificate
+and zone information to `undefined`, the infrastructure will assume
+auto generated domain names for Cognito, API gateway, and Cloudfront
+distributions, and will be largely free of charge.
+
 ## Resources
 
 - S3 bucket for video storage

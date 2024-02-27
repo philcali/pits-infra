@@ -18,7 +18,7 @@ function handler() {
     TRIGGER=$(aws s3api head-object \
       --bucket "$BUCKET_NAME" \
       --key "$VIDEO_PATH/$CAMERA_NAME/$VIDEO_FILE" \
-      --query 'Metadata."x-amzn-meta-trigger"' \
+      --query 'Metadata."trigger"' \
       --output text)
     aws s3 cp "$video_object" "$TEMP_DIR"
     NEW_VIDEO_FILE="${VIDEO_FILE%.*}.${CONVERSION_FORMAT}"
