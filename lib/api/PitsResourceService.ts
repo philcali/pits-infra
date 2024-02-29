@@ -210,7 +210,7 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
                 'iot:DescribeThing',
                 'iot:ListThingGroups',
                 'iot:ListThingsInThingGroup',
-                // Events and Confiuguration
+                // Events and Configuration
                 'iot:GetThingShadow',
                 'iot:UpdateThingShadow',
                 'iot:Publish',
@@ -218,11 +218,12 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
                 'iot:CreateJob',
                 'iot:UpdateJob',
                 'iot:CancelJob',
-                'iot:CancelJobExecution',
                 'iot:DeleteJob',
-                'iot:ListJobExecutionsForJob',
                 'iot:DescribeJob',
                 'iot:DescribeJobExecution',
+                'iot:CancelJobExecution',
+                'iot:DeleteJobExecution',
+                'iot:ListJobExecutionsForJob',
                 // Notification management
                 "sns:GetSubscriptionAttributes",
                 "sns:SetSubscriptionAttributes",
