@@ -136,7 +136,7 @@ export class PitsApiStack extends Stack {
   
     const health = new PitsDeviceHealth(this, 'CameraHealth', {
       table: resourceService.table,
-      expiresDuration: Duration.days(14),
+      expiresDuration: Duration.days(30),
     });
     this.health = health;
 
