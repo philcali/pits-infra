@@ -1,4 +1,6 @@
 import json
+import io
+import base64
 import boto3
 import botocore
 import os
@@ -14,6 +16,7 @@ def handler(event, context):
     table_name = os.getenv('TABLE_NAME')
     account_id = os.getenv('ACCOUNT_ID')
     expire_days = int(os.getenv('EXPIRE_DAYS'))
+    conversion_video_path = os.getenv('CONVERSION_SNAPSHOT_PATH')
     table = ddb.Table(table_name)
     for record in event['Records']:
         h_obj = s3.head_object(
@@ -28,6 +31,12 @@ def handler(event, context):
         split_pieces = record['s3']['object']['key'].split('/')
         thing_name = split_pieces[-2]
         video_name = split_pieces[-1]
+        
+        response = s3.get_object(
+            Bucket=record['s3']['bucket']['name'],
+            Key=f'{conversion_video_path}/{thing_name}/{video_name}.jpg')
+        thumbnail_string = str(base64.b64encode(response['Body'].read()), 'utf-8')
+        
         attempt = 0
         while attempt < 3:
             attempt += 1
@@ -42,6 +51,7 @@ def handler(event, context):
                         'thingName': thing_name,
                         'motionVideo': video_name,
                         'duration': duration,
+                        'thumbnail': thumbnail_string,
                         'createTime': creation_time,
                         'updateTime': creation_time,
                         'expiresIn': creation_time + (60 * 60 * 24 * expire_days)

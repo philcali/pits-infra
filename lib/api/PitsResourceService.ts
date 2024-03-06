@@ -335,6 +335,7 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
             environment: {
                 'TABLE_NAME': this.table.tableName,
                 'ACCOUNT_ID': Aws.ACCOUNT_ID,
+                'CONVERSION_SNAPSHOT_PATH': this.storage.motionVideoSnapshotPath(),
                 // TODO: pull from the storage configuration
                 'EXPIRE_DAYS': '180',
             },
@@ -349,7 +350,10 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
         indexFunction.addToRolePolicy(new PolicyStatement({
             effect: Effect.ALLOW,
             actions: [ 's3:Get*' ],
-            resources: [ this.storage.arnForMotionVideoConvertedObjects() ]
+            resources: [
+                this.storage.arnForMotionVideoConvertedObjects(),
+                this.storage.arnForMotionVideoSnapshotObjects(),
+            ]
         }))
 
         this.storage.bucket.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(indexFunction), {
