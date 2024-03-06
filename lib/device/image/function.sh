@@ -26,10 +26,11 @@ function handler() {
     aws s3 cp "$video_object" "$TEMP_DIR"
     NEW_VIDEO_FILE="${VIDEO_FILE%.*}.${CONVERSION_FORMAT}"
     ffmpeg -r "$FRAMERATE" -i "$TEMP_DIR/$VIDEO_FILE" -c copy "$TEMP_DIR/$NEW_VIDEO_FILE"
-    DURATION=$(mediainfo --Output=JSON "$TEMP_DIR/$NEW_VIDEO_FILE" | jq '.media.track[] | select(.["@type"] == "General") | .Duration' | tr -d '"')
+    DURATION=$(mediainfo --Output=JSON "$TEMP_DIR/$NEW_VIDEO_FILE" | jq -r '.media.track[] | select(.["@type"] == "General") | .Duration' | tr -d '"')
     # TODO: improve this naive approach here and query device configuration... this involves reading shadow config
-    MOTION_STAMP=$((DURATION/2))
-    ffmpeg -i "$TEMP_DIR/$NEW_VIDEO_FILE" --ss "$MOTION_STAMP" -q:v "$CAPTURE_QUALITY" -frames:v 1 -o "$TEMP_DIR/thumbnail_latest.jpg"
+    printf -v MOTION_STAMP %.0f "$DURATION"
+    MOTION_STAMP=$((MOTION_STAMP/2))
+    ffmpeg -ss "$MOTION_STAMP" -i "$TEMP_DIR/$NEW_VIDEO_FILE" -q:v "$CAPTURE_QUALITY" -frames:v 1 "$TEMP_DIR/thumbnail_latest.jpg"
     # TODO: make updating the thumbnail configurable
     LOCATIONS=(\
       "$CAPTURE_PATH/$CAMERA_NAME/thumbnail_latest" \
