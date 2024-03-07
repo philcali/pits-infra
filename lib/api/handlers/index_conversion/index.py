@@ -32,9 +32,11 @@ def handler(event, context):
         thing_name = split_pieces[-2]
         video_name = split_pieces[-1]
         
+        converted_thumbnail = f'{conversion_video_path}/{thing_name}/{video_name}.jpg'
+        print(f'Pulling capture video {converted_thumbnail}')
         response = s3.get_object(
             Bucket=record['s3']['bucket']['name'],
-            Key=f'{conversion_video_path}/{thing_name}/{video_name}.jpg')
+            Key=converted_thumbnail)
         thumbnail_string = str(base64.b64encode(response['Body'].read()), 'utf-8')
         
         attempt = 0
