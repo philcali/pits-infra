@@ -14,12 +14,14 @@ export interface PitsStorageProps {
     readonly bucketName?: string;
     readonly motionVideoPath?: string;
     readonly motionVideoConvertedPath?: string;
+    readonly captureImagePath?: string;
     readonly expireMotionVideos?: boolean;
 }
 
 export interface PitsConversionFunctionProps {
     readonly framerate?: number;
     readonly conversionFormat?: string;
+    readonly captureQuality?: number;
     readonly functionTimeout?: Duration;
     readonly functionMemorySize?: number;
     readonly containerRepository?: IRepository;
@@ -29,22 +31,28 @@ export interface IPitsStorage {
     readonly bucket: IBucket;
     readonly motionVideoPath: string;
     readonly motionVideoConvertedPath: string;
+    readonly captureImagePath: string;
 
     addConversionFunction(props?: PitsConversionFunctionProps): IFunction;
+    motionVideoSnapshotPath(): string;
     arnForMotionVideoObjects(): string;
     arnForMotionVideoConvertedObjects(): string;
+    arnForCaptureImageObjects(): string;
+    arnForMotionVideoSnapshotObjects(): string;
 }
 
 export interface ImportPitsStorageProps {
     readonly bucketName: string;
     readonly motionVideoPath: string;
     readonly motionVideoConvertedPath: string;
+    readonly captureImagePath: string;
 }
 
 abstract class PitsStorageBase extends Construct implements IPitsStorage {
     readonly bucket: IBucket;
     readonly motionVideoPath: string;
     readonly motionVideoConvertedPath: string;
+    readonly captureImagePath: string;
 
     addConversionFunction(props?: PitsConversionFunctionProps): IFunction {
         const conversionImage = new DockerImageAsset(this, 'ConvertImage', {
@@ -106,7 +114,10 @@ abstract class PitsStorageBase extends Construct implements IPitsStorage {
             environment: {
                 'CONVERSION_FORMAT': (props?.conversionFormat || 'mp4'),
                 'CONVERSION_PATH': conversionPath,
+                'CONVERSION_SNAPSHOT_PATH': `${this.motionVideoSnapshotPath()}`,
                 'FRAMERATE': (props?.framerate || 15).toString(),
+                'CAPTURE_PATH': this.captureImagePath,
+                'CAPTURE_QUALITY': (props?.captureQuality || 10).toString(),
             },
             memorySize: props?.functionMemorySize || 1024,
             timeout: props?.functionTimeout || Duration.minutes(2)
@@ -117,7 +128,7 @@ abstract class PitsStorageBase extends Construct implements IPitsStorage {
                 's3:GetObject'
             ],
             resources: [
-                this.bucket.arnForObjects(`${this.motionVideoPath}/*`)
+                this.arnForMotionVideoObjects(),
             ]
         }));
         conversionFunction.addToRolePolicy(new PolicyStatement({
@@ -126,7 +137,9 @@ abstract class PitsStorageBase extends Construct implements IPitsStorage {
                 's3:PutObject'
             ],
             resources: [
-                this.bucket.arnForObjects(`${this.motionVideoConvertedPath}/*`)
+                this.arnForMotionVideoConvertedObjects(),
+                this.arnForMotionVideoSnapshotObjects(),
+                this.arnForCaptureImageObjects(),
             ]
         }));
         this.bucket.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(conversionFunction), {
@@ -135,8 +148,20 @@ abstract class PitsStorageBase extends Construct implements IPitsStorage {
         return conversionFunction;
     }
 
+    motionVideoSnapshotPath(): string {
+        return `${this.motionVideoConvertedPath}_images`;
+    }
+
+    arnForCaptureImageObjects(): string {
+        return this.bucket.arnForObjects(`${this.captureImagePath}/*`);
+    }
+
     arnForMotionVideoObjects(): string {
         return this.bucket.arnForObjects(`${this.motionVideoPath}/*`);
+    }
+
+    arnForMotionVideoSnapshotObjects(): string {
+        return this.bucket.arnForObjects(`${this.motionVideoSnapshotPath()}/*`);
     }
 
     arnForMotionVideoConvertedObjects(): string {
@@ -148,6 +173,7 @@ class ImportPitsStorage extends PitsStorageBase {
     readonly bucket: IBucket;
     readonly motionVideoPath: string;
     readonly motionVideoConvertedPath: string;
+    readonly captureImagePath: string;
 
     constructor(scope: Construct, id: string, props: ImportPitsStorageProps) {
         super(scope, id);
@@ -155,6 +181,7 @@ class ImportPitsStorage extends PitsStorageBase {
         this.bucket = Bucket.fromBucketName(this, 'ImportBucket', props.bucketName);
         this.motionVideoPath = props.motionVideoPath;
         this.motionVideoConvertedPath = props.motionVideoConvertedPath;
+        this.captureImagePath = props.captureImagePath;
     }
 }
 
@@ -162,6 +189,7 @@ export class PitsStorage extends PitsStorageBase {
     readonly bucket: IBucket;
     readonly motionVideoPath: string;
     readonly motionVideoConvertedPath: string;
+    readonly captureImagePath: string;
 
     static fromImportProps(scope: Construct, id: string, props: ImportPitsStorageProps) {
         return new ImportPitsStorage(scope, id, props);
@@ -172,6 +200,7 @@ export class PitsStorage extends PitsStorageBase {
 
         this.motionVideoPath = props?.motionVideoPath || 'motion_videos';
         this.motionVideoConvertedPath = props?.motionVideoConvertedPath || 'motion_videos_converted';
+        this.captureImagePath = props?.captureImagePath || 'capture_images';
 
         let lifecycleRules: Array<LifecycleRule> | undefined = undefined;
         if (props?.expireMotionVideos === undefined || props.expireMotionVideos === true) {
@@ -180,6 +209,11 @@ export class PitsStorage extends PitsStorageBase {
                     enabled: true,
                     prefix: `${this.motionVideoPath}/`,
                     expiration: Duration.days(30)
+                },
+                {
+                    enabled: true,
+                    prefix: `${this.motionVideoSnapshotPath()}/`,
+                    expiration: Duration.days(7)
                 },
                 {
                     enabled: true,

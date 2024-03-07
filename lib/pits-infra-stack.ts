@@ -35,7 +35,7 @@ export class PitsDeviceConnectionStack extends Stack {
 
     this.deviceConnection = new PitsDeviceConnection(this, 'DeviceConnection', {
       bucketName: props.bucketName,
-      enableDefaultMotionVideoConversion: true
+      enableDefaultMotionVideoConversion: true,
     });
     
   }
@@ -102,7 +102,8 @@ export class PitsApiStack extends Stack {
       storage: PitsStorage.fromImportProps(this, 'ImportedPitsStorage', {
         bucketName: props.bucketName,
         motionVideoPath: props.motionVideosPath,
-        motionVideoConvertedPath: props.motionVideosCapturedPath
+        motionVideoConvertedPath: props.motionVideosCapturedPath,
+        captureImagePath: props.captureImagesPath,
       }),
       captureImagePath: props.captureImagesPath,
       consoleOrigin: `https://${props.consoleDomain}`,
