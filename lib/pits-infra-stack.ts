@@ -19,6 +19,7 @@ import {
   DEVICE_BUCKET_NAME
 } from './constants';
 import * as path from 'path';
+import { IPitsLogging, PitsLogging } from './device/PitsLogging';
 
 export interface PitsDeviceConnectionStackProps extends StackProps {
   readonly bucketName: string;
@@ -26,6 +27,7 @@ export interface PitsDeviceConnectionStackProps extends StackProps {
 
 export class PitsDeviceConnectionStack extends Stack {
   readonly deviceConnection: IPitsDeviceConnection;
+  readonly deviceLogging: IPitsLogging;
 
   constructor(scope: Construct, id: string, props: PitsDeviceConnectionStackProps) {
     super(scope, id, {
@@ -38,6 +40,10 @@ export class PitsDeviceConnectionStack extends Stack {
       enableDefaultMotionVideoConversion: true,
     });
     
+    this.deviceLogging = new PitsLogging(this, 'DeviceLogging', {
+      logGroupName: '/pits/device/DaemonLogging',
+      allowedRoles: [ this.deviceConnection.role ]
+    })
   }
 }
 
@@ -221,7 +227,7 @@ export class PitsInfraStack extends Stack {
       bucketName: deviceConnectionStack.deviceConnection.storage.bucket.bucketName,
       motionVideosPath: deviceConnectionStack.deviceConnection.storage.motionVideoPath,
       motionVideosCapturedPath: deviceConnectionStack.deviceConnection.storage.motionVideoConvertedPath,
-      captureImagesPath: deviceConnectionStack.deviceConnection.role.captureImagesPath
+      captureImagesPath: deviceConnectionStack.deviceConnection.storage.captureImagePath,
     });
 
     new PitsConsoleStack(this, 'ConsoleStack', {

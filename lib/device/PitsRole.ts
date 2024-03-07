@@ -1,6 +1,5 @@
 import {
     Effect,
-    IManagedPolicy,
     IRole,
     ManagedPolicy,
     PolicyDocument,
@@ -21,14 +20,14 @@ export interface PitsRoleProps {
 
 export interface IPitsRole {
     readonly role: IRole;
-    readonly managedPolicy: IManagedPolicy;
+    readonly managedPolicy: ManagedPolicy;
     readonly motionVideoPath: string;
     readonly captureImagesPath: string;
 }
 
 export class PitsRole extends Construct implements IPitsRole {
     readonly role: IRole;
-    readonly managedPolicy: IManagedPolicy;
+    readonly managedPolicy: ManagedPolicy;
     readonly motionVideoPath: string;
     readonly captureImagesPath: string;
 
