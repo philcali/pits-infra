@@ -140,6 +140,7 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
                 'BUCKET_NAME': this.storage.bucket.bucketName,
                 'IMAGE_PREFIX': captureImagePath,
                 'VIDEO_PREFIX': this.storage.motionVideoConvertedPath,
+                'DEFAULT_VIDEO_PREFIX': this.storage.motionVideoPath,
                 'TOPIC_ARN': this.topic.topicArn
             }
         });
