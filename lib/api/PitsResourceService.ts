@@ -26,9 +26,11 @@ import { ICertificate } from "aws-cdk-lib/aws-certificatemanager";
 import { CnameRecord, IHostedZone } from "aws-cdk-lib/aws-route53";
 import { EventType } from "aws-cdk-lib/aws-s3";
 import { LambdaDestination } from "aws-cdk-lib/aws-s3-notifications";
-import * as path from 'path';
 import { ITopic, Topic } from "aws-cdk-lib/aws-sns";
 import { DynamoEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
+import { Rule, Schedule } from "aws-cdk-lib/aws-events";
+import * as path from 'path';
+import { LambdaFunction } from "aws-cdk-lib/aws-events-targets";
 
 export interface PitsResourceServiceAuthorizationProps {
     readonly issuer: string,
@@ -59,6 +61,10 @@ export interface PitsResourceServiceNotificationProps {
     readonly baseUrl: string;
 }
 
+export interface PitsResourceServiceSoftwareNotificationProps {
+    readonly schedule?: Schedule;
+}
+
 export interface IPitsResourceService {
     readonly table: ITable;
     readonly storage: IPitsStorage;
@@ -69,6 +75,7 @@ export interface IPitsResourceService {
 
     addDomain(id: string, props: PitsResourceServiceDomainProps): void;
     addNotification(id: string, props: PitsResourceServiceNotificationProps): void;
+    addSoftwareVersionNotification(id: string, props?: PitsResourceServiceSoftwareNotificationProps): void
 }
 
 export class PitsResourceService extends Construct implements IPitsResourceService {
@@ -326,6 +333,32 @@ export class PitsResourceService extends Construct implements IPitsResourceServi
                 resourceName: '*/*'
             })
         });
+    }
+
+    addSoftwareVersionNotification(id: string, props?: PitsResourceServiceSoftwareNotificationProps): void {
+        const softwareVersion = new Function(this, `${id}eVersionFunction`, {
+            code: Code.fromAsset(path.join(__dirname, 'handlers', 'software_version')),
+            runtime: Runtime.PYTHON_3_12,
+            handler: 'index.handler',
+            environment: {
+                'TABLE_NAME': this.table.tableName,
+                'ACCOUNT_ID': Aws.ACCOUNT_ID,
+            },
+            memorySize: 512,
+            timeout: Duration.minutes(1),
+        });
+
+        softwareVersion.addToRolePolicy(new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: [ 'dynamodb:PutItem' ],
+            resources: [ this.table.tableArn ]
+        }));
+
+        const updateRule = new Rule(this, `${id}VersionUpdateRule`, {
+            schedule: props?.schedule ?? Schedule.rate(Duration.days(1)),
+        });
+
+        updateRule.addTarget(new LambdaFunction(softwareVersion));
     }
 
     addNotification(id: string, props: PitsResourceServiceNotificationProps): void {

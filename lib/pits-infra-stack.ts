@@ -140,7 +140,9 @@ export class PitsApiStack extends Stack {
         baseUrl: `https://${props.consoleDomain}`
       });
     }
-  
+
+    this.resourceService.addSoftwareVersionNotification('DeviceSoftware');
+
     const health = new PitsDeviceHealth(this, 'CameraHealth', {
       table: resourceService.table,
       expiresDuration: Duration.days(30),

@@ -15,6 +15,10 @@ def is_unhealthy_bit(record, account_id):
     return record['eventName'] == 'MODIFY' and f'DeviceHealth:{account_id}:latest' == record['dynamodb']['NewImage']['PK']['S'] and record['dynamodb']['NewImage'].get('status', None) != record['dynamodb']['OldImage'].get('status', None)
 
 
+def is_new_version(record, account_id):
+    return record['eventName'] == 'MODIFY' and f'Versions:{account_id}:latest' == record['dynamodb']['NewImage']['PK']['S'] and record['dynamodb']['NewImage'].get('tag', None) != record['dynamodb']['OldImage'].get('tag', None)
+
+
 def camera_groups(table, account_id, thing_name):
     resp = table.query(
         KeyConditionExpression="#pk = :pk",
@@ -50,61 +54,113 @@ def generate_health_signal(record, camera, create_datetime):
     )
 
 
+def generate_new_version_alert(record, create_datetime):
+    tag = record['dynamodb']['NewImage']['tag']['S']
+    commit_url = record['dynamodb']['NewImage']['commit']['M']['url']['S']
+    return (
+        "A new version of pits-device was released",
+        f'A new version of pits-device was releasd {tag} on {create_datetime.isoformat()}. Check it out {commit_url}.',
+        'SOFTWARE_VERSION',
+    )
+
+
+def camera_based_alert(topic, record, payload_thunk):
+    table = ddb.Table(os.getenv('TABLE_NAME'))
+    account_id = os.getenv('ACCOUNT_ID')
+    create_time_str = record['dynamodb']['NewImage']['updateTime']['N']
+    create_datetime = datetime.utcfromtimestamp(int(create_time_str))
+    thing_name = record['dynamodb']['NewImage']['thingName']['S']
+    camera = table.get_item(Key={
+        'PK': f'Cameras:{account_id}',
+        'SK': thing_name
+    })
+    if 'Item' not in camera:
+        print(f'Could not find a camera for {account_id}:{thing_name}')
+        return
+    try:
+        subject, message, alert_type = payload_thunk(record, camera, create_datetime)
+        topic.publish(
+            Subject=subject,
+            Message=message,
+            MessageAttributes={
+                'AlertType': {
+                    'DataType': 'String',
+                    'StringValue': alert_type
+                },
+                'Scope': {
+                    'DataType': 'String',
+                    'StringValue': 'CAMERA',
+                },
+                'Group': {
+                    'DataType': 'String.Array',
+                    'StringValue': camera_groups(
+                        table=table,
+                        account_id=account_id,
+                        thing_name=thing_name
+                    )
+                },
+                'Camera': {
+                    'DataType': 'String',
+                    'StringValue': thing_name
+                },
+                'DayOfWeek': {
+                    'DataType': 'Number',
+                    'StringValue': str(create_datetime.isoweekday())
+                },
+                'Hour': {
+                    'DataType': 'Number',
+                    'StringValue': str(create_datetime.hour)
+                }
+            }
+        )
+        print(f'Published {thing_name} to {topic.arn}')
+    except Exception as exc:
+        print(f'Could not publish to {topic.arn}: {exc}')
+
+
+def global_based_alert(topic, record, payload_thunk):
+    create_time_str = record['dynamodb']['NewImage']['updateTime']['N']
+    create_datetime = datetime.utcfromtimestamp(int(create_time_str))
+    try:
+        subject, message, alert_type = payload_thunk(record, create_datetime)
+        topic.publish(
+            Subject=subject,
+            Message=message,
+            MessageAttributes={
+                'AlertType': {
+                    'DataType': 'String',
+                    'StringValue': alert_type
+                },
+                'Scope': {
+                    'DataType': 'String',
+                    'StringValue': 'GLOBAL',
+                },
+                'DayOfWeek': {
+                    'DataType': 'Number',
+                    'StringValue': str(create_datetime.isoweekday())
+                },
+                'Hour': {
+                    'DataType': 'Number',
+                    'StringValue': str(create_datetime.hour)
+                }
+            }
+        )
+        print(f'Published global alert to {topic.arn}')
+    except Exception as exc:
+        print(f'Could not publish to {topic.arn}: {exc}')
+
+
 def handler(event, context):
     print(f'Event payload: {json.dumps(event)}')
     print(f'Event context: {context}')
     account_id = os.getenv('ACCOUNT_ID')
-    table = ddb.Table(os.getenv('TABLE_NAME'))
     topic = sns.Topic(arn=os.getenv('TOPIC_ARN'))
     handlers = [
-        (is_new_motion, generate_motion_alert),
-        (is_unhealthy_bit, generate_health_signal)
+        (is_new_motion, camera_based_alert, generate_motion_alert),
+        (is_unhealthy_bit, camera_based_alert, generate_health_signal),
+        (is_new_version, global_based_alert, generate_new_version_alert),
     ]
     for record in event['Records']:
-        acceptable_thunks = [thunk for pred, thunk in handlers if pred(record, account_id)]
-        for payload_thunk in acceptable_thunks:
-            create_time_str = record['dynamodb']['NewImage']['updateTime']['N']
-            create_datetime = datetime.utcfromtimestamp(int(create_time_str))
-            thing_name = record['dynamodb']['NewImage']['thingName']['S']
-            camera = table.get_item(Key={
-                'PK': f'Cameras:{account_id}',
-                'SK': thing_name
-            })
-            if 'Item' not in camera:
-                print(f'Could not find a camera for {account_id}:{thing_name}')
-                continue
-            try:
-                subject, message, alert_type = payload_thunk(record, camera, create_datetime)
-                topic.publish(
-                    Subject=subject,
-                    Message=message,
-                    MessageAttributes={
-                        'AlertType': {
-                            'DataType': 'String',
-                            'StringValue': alert_type
-                        },
-                        'Group': {
-                            'DataType': 'String.Array',
-                            'StringValue': camera_groups(
-                                table=table,
-                                account_id=account_id,
-                                thing_name=thing_name
-                            )
-                        },
-                        'Camera': {
-                            'DataType': 'String',
-                            'StringValue': thing_name
-                        },
-                        'DayOfWeek': {
-                            'DataType': 'Number',
-                            'StringValue': str(create_datetime.isoweekday())
-                        },
-                        'Hour': {
-                            'DataType': 'Number',
-                            'StringValue': str(create_datetime.hour)
-                        }
-                    }
-                )
-                print(f'Published {thing_name} to {topic.arn}')
-            except Exception as exc:
-                print(f'Could not publish to {topic.arn}: {exc}')
+        acceptable_thunks = [(scope, thunk) for pred, scope, thunk in handlers if pred(record, account_id)]
+        for scope, payload_thunk in acceptable_thunks:
+            scope(topic, record, payload_thunk)
