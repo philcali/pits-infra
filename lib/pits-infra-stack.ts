@@ -20,6 +20,9 @@ import {
 } from './constants';
 import * as path from 'path';
 import { IPitsLogging, PitsLogging } from './device/PitsLogging';
+import { ITable } from 'aws-cdk-lib/aws-dynamodb';
+import { PitsDataService } from './data/PitsDataService';
+import { AwsIotAccountEndpoint, IAwsIotAccountEndpoint } from './api/AwsIotAccountEndpoint';
 
 export interface PitsDeviceConnectionStackProps extends StackProps {
   readonly bucketName: string;
@@ -91,6 +94,7 @@ export interface PitsApiStackProps extends StackProps, PitsReachabilityProps {
   readonly bucketName: string;
   readonly motionVideosPath: string;
   readonly motionVideosCapturedPath: string;
+  readonly dataEndpoint?: IAwsIotAccountEndpoint;
 }
 
 export class PitsApiStack extends Stack {
@@ -104,6 +108,7 @@ export class PitsApiStack extends Stack {
     });
 
     const resourceService = new PitsResourceService(this, 'ResourceService', {
+      dataEndpoint: props.dataEndpoint,
       enableDevelopmentOrigin: true,
       storage: PitsStorage.fromImportProps(this, 'ImportedPitsStorage', {
         bucketName: props.bucketName,
@@ -182,6 +187,44 @@ export class PitsConsoleStack extends Stack {
   }
 }
 
+export interface PitsDataStackProps extends StackProps, PitsReachabilityProps {
+  readonly table: ITable;
+  readonly authorization: IPitsAuthorization;
+  readonly dataDomain?: string;
+  readonly dataEndpoint?: IAwsIotAccountEndpoint;
+}
+
+export class PitsDataStack extends Stack {
+  constructor(scope: Construct, id: string, props: PitsDataStackProps) {
+    super(scope, id, {
+      stackName: 'PitsData',
+      ...props,
+    });
+
+    const dataService = new PitsDataService(this, 'DataPlaneApi', {
+      table: props.table,
+      dataEndpoint: props.dataEndpoint,
+      authorization: {
+        userPoolId: props.authorization.userPool.userPoolId,
+        clientId: props.authorization.defaultUserClient.userPoolClientId,
+      },
+      functionCode: new SubmoduleCode(path.join(__dirname, 'assets', 'data'), {
+          moduleName: 'lib/assets/data',
+          buildCommand: './dev.make-zip.sh',
+          buildOutput: 'build_function.zip'
+      }),
+    });
+
+    if (props.dataDomain && props.certificate && props.hostedZone) {
+      dataService.addDomain('CustomDomain', {
+        certificate: props.certificate,
+        hostedZone: props.hostedZone,
+        domainName: props.dataDomain,
+      })
+    }
+  }
+}
+
 export class PitsInfraStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
@@ -190,6 +233,8 @@ export class PitsInfraStack extends Stack {
     let hostedZone: undefined | IHostedZone;
     let apiDomain: undefined | string;
     let consoleDomain: undefined | string;
+    let dataDomain: undefined | string;
+    const dataEndpoint = AwsIotAccountEndpoint.dataEndpoint(this);
 
     if (CERTIFICATE_ID) {
       certificate = Certificate.fromCertificateArn(this, 'PitsShortenerCertificate', this.formatArn({
@@ -207,6 +252,7 @@ export class PitsInfraStack extends Stack {
       });
       apiDomain = `api.${ZONE_NAME}`;
       consoleDomain = `app.${ZONE_NAME}`;
+      dataDomain = `data.${ZONE_NAME}`;
     }
 
     const deviceConnectionStack = new PitsDeviceConnectionStack(this, 'DeviceConnectionStack', {
@@ -220,17 +266,27 @@ export class PitsInfraStack extends Stack {
       consoleDomain
     });
 
-    new PitsApiStack(this, 'ApiStack', {
+    const apiStack = new PitsApiStack(this, 'ApiStack', {
       apiDomain,
       consoleDomain,
       certificate,
       hostedZone,
+      dataEndpoint,
       authorization: authorizationStack.authorization,
       bucketName: deviceConnectionStack.deviceConnection.storage.bucket.bucketName,
       motionVideosPath: deviceConnectionStack.deviceConnection.storage.motionVideoPath,
       motionVideosCapturedPath: deviceConnectionStack.deviceConnection.storage.motionVideoConvertedPath,
       captureImagesPath: deviceConnectionStack.deviceConnection.storage.captureImagePath,
     });
+
+    new PitsDataStack(this, 'DataStack', {
+      table: apiStack.resourceService.table,
+      authorization: authorizationStack.authorization,
+      dataDomain,
+      dataEndpoint,
+      certificate,
+      hostedZone,
+    })
 
     new PitsConsoleStack(this, 'ConsoleStack', {
       apiDomain,
