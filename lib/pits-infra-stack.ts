@@ -18,11 +18,13 @@ import {
   CONSOLE_BUCKET_NAME,
   DEVICE_BUCKET_NAME
 } from './constants';
-import * as path from 'path';
 import { IPitsLogging, PitsLogging } from './device/PitsLogging';
 import { ITable } from 'aws-cdk-lib/aws-dynamodb';
-import { PitsDataService } from './data/PitsDataService';
+import { IPitsDataService, PitsDataService } from './data/PitsDataService';
 import { AwsIotAccountEndpoint, IAwsIotAccountEndpoint } from './api/AwsIotAccountEndpoint';
+import * as path from 'path';
+import { IManagedPolicy, IRole, ManagedPolicy, Role } from 'aws-cdk-lib/aws-iam';
+import { PitsRole } from './device/PitsRole';
 
 export interface PitsDeviceConnectionStackProps extends StackProps {
   readonly bucketName: string;
@@ -42,7 +44,7 @@ export class PitsDeviceConnectionStack extends Stack {
       bucketName: props.bucketName,
       enableDefaultMotionVideoConversion: true,
     });
-    
+
     this.deviceLogging = new PitsLogging(this, 'DeviceLogging', {
       logGroupName: '/pits/device/DaemonLogging',
       allowedRoles: [ this.deviceConnection.role ]
@@ -190,20 +192,26 @@ export class PitsConsoleStack extends Stack {
 export interface PitsDataStackProps extends StackProps, PitsReachabilityProps {
   readonly table: ITable;
   readonly authorization: IPitsAuthorization;
+  readonly pitsRoleName: string;
   readonly dataDomain?: string;
   readonly dataEndpoint?: IAwsIotAccountEndpoint;
 }
 
 export class PitsDataStack extends Stack {
+  readonly dataService: IPitsDataService;
+
   constructor(scope: Construct, id: string, props: PitsDataStackProps) {
     super(scope, id, {
       stackName: 'PitsData',
       ...props,
     });
 
-    const dataService = new PitsDataService(this, 'DataPlaneApi', {
+    this.dataService = new PitsDataService(this, 'DataPlaneApi', {
       table: props.table,
       dataEndpoint: props.dataEndpoint,
+      allowedManagementRoles: [
+        props.pitsRoleName
+      ],
       authorization: {
         userPoolId: props.authorization.userPool.userPoolId,
         clientId: props.authorization.defaultUserClient.userPoolClientId,
@@ -216,7 +224,7 @@ export class PitsDataStack extends Stack {
     });
 
     if (props.dataDomain && props.certificate && props.hostedZone) {
-      dataService.addDomain('CustomDomain', {
+      this.dataService.addDomain('CustomDomain', {
         certificate: props.certificate,
         hostedZone: props.hostedZone,
         domainName: props.dataDomain,
@@ -282,11 +290,12 @@ export class PitsInfraStack extends Stack {
     new PitsDataStack(this, 'DataStack', {
       table: apiStack.resourceService.table,
       authorization: authorizationStack.authorization,
+      pitsRoleName: deviceConnectionStack.deviceConnection.role.role.roleName,
       dataDomain,
       dataEndpoint,
       certificate,
       hostedZone,
-    })
+    });
 
     new PitsConsoleStack(this, 'ConsoleStack', {
       apiDomain,

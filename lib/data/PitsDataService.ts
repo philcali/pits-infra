@@ -1,12 +1,14 @@
 import { ArnFormat, Aws, Duration, Stack } from "aws-cdk-lib";
 import { CfnApi, CfnApiMapping, CfnAuthorizer, CfnDomainName, CfnIntegration, CfnRoute, CfnRouteProps, CfnStage } from "aws-cdk-lib/aws-apigatewayv2";
 import { ITable } from "aws-cdk-lib/aws-dynamodb";
-import { Effect, PolicyDocument, PolicyStatement, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
+import { Effect, IManagedPolicy, IRole, ManagedPolicy, PolicyDocument, PolicyStatement, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { Code, Function, IFunction, Runtime } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
 import { AwsIotAccountEndpoint, IAwsIotAccountEndpoint } from "../api/AwsIotAccountEndpoint";
 import { PitsResourceServiceDomainProps } from "../api/PitsResourceService";
 import { CnameRecord } from "aws-cdk-lib/aws-route53";
+
+type RoleLike = IRole | string;
 
 export interface PitsDataResourceAuthorizationProps {
     readonly userPoolId: string;
@@ -17,6 +19,7 @@ export interface PitsDataResourceProps {
     readonly name?: string;
     readonly table: ITable;
     readonly functionCode: Code;
+    readonly allowedManagementRoles?: RoleLike[];
     readonly authorization: PitsDataResourceAuthorizationProps;
     readonly dataEndpoint?: IAwsIotAccountEndpoint;
 }
@@ -24,6 +27,9 @@ export interface PitsDataResourceProps {
 export interface IPitsDataService {
     readonly apiId: string
     readonly stageId: string
+
+    addDomain(id: string, props: PitsResourceServiceDomainProps): void;
+    createConnectionPolicy(): PolicyStatement;
 }
 
 export class PitsDataService extends Construct implements IPitsDataService {
@@ -65,6 +71,7 @@ export class PitsDataService extends Construct implements IPitsDataService {
         socketHandler.addToRolePolicy(new PolicyStatement({
             effect: Effect.ALLOW,
             actions: [
+                'dynamodb:GetItem',
                 'dynamodb:PutItem',
                 'dynamodb:DeleteItem',
                 'dynamodb:Query'
@@ -90,22 +97,23 @@ export class PitsDataService extends Construct implements IPitsDataService {
             protocolType: 'WEBSOCKET',
             routeSelectionExpression: '$request.body.action',
         });
+        this.apiId = resourceApi.ref;
 
-        socketHandler.addToRolePolicy(new PolicyStatement({
-            effect: Effect.ALLOW,
-            actions: [
-                'execute-api:Invoke',
-                'execute-api:ManageConnections'
+        const managementRoles = props.allowedManagementRoles?.map(roleLike => {
+            if (typeof roleLike === 'string') {
+                return Role.fromRoleName(this, roleLike, roleLike);
+            } else {
+                return roleLike;
+            }
+        })
+
+        new ManagedPolicy(this, 'ConnectionPolicy', {
+            statements: [this.createConnectionPolicy()],
+            roles: [
+                socketHandler.role as IRole,
+                ...(managementRoles ?? [])
             ],
-            resources: [
-                Stack.of(this).formatArn({
-                    service: 'execute-api',
-                    arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
-                    resource: resourceApi.ref,
-                    resourceName: '*',
-                })
-            ]
-        }));
+        });
 
         const credentialsRole = new Role(this, 'CredentialsRole', {
             assumedBy: new ServicePrincipal('apigateway.amazonaws.com'),
@@ -203,8 +211,25 @@ export class PitsDataService extends Construct implements IPitsDataService {
             })
         }))
 
-        this.apiId = resourceApi.ref;
         this.stageId = resourceStage.ref;
+    }
+
+    createConnectionPolicy(): PolicyStatement {
+        return new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: [
+                'execute-api:Invoke',
+                'execute-api:ManageConnections'
+            ],
+            resources: [
+                Stack.of(this).formatArn({
+                    service: 'execute-api',
+                    arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+                    resource: this.apiId,
+                    resourceName: '*',
+                })
+            ]
+        })
     }
 
     addDomain(id: string, props: PitsResourceServiceDomainProps): void {
