@@ -4,3 +4,6 @@
 [submodule "lib/assets/api"]
 	path = lib/assets/api
 	url = https://github.com/philcali/pits-api.git
+[submodule "lib/assets/data"]
+	path = lib/assets/data
+	url = https://github.com/philcali/pits-data.git
