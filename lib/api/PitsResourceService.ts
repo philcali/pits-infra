@@ -29,8 +29,8 @@ import { LambdaDestination } from "aws-cdk-lib/aws-s3-notifications";
 import { ITopic, Topic } from "aws-cdk-lib/aws-sns";
 import { DynamoEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import { Rule, Schedule } from "aws-cdk-lib/aws-events";
-import * as path from 'path';
 import { LambdaFunction } from "aws-cdk-lib/aws-events-targets";
+import * as path from 'path';
 
 export interface PitsResourceServiceAuthorizationProps {
     readonly issuer: string,
