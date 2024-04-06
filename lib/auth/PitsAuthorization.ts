@@ -32,6 +32,7 @@ export interface PitsAuthorizationProps {
     readonly poolName?: string;
     readonly enableDevelopmentOrigin?: boolean;
     readonly customOrigins?: string[];
+    readonly mfa?: Mfa;
 }
 
 export class PitsAuthorization extends Construct implements IPitsAuthorization {
@@ -49,7 +50,7 @@ export class PitsAuthorization extends Construct implements IPitsAuthorization {
             email: UserPoolEmail.withCognito('noreply@verificationemail.com'),
             enableSmsRole: false,
             signInCaseSensitive: false,
-            mfa: Mfa.OPTIONAL,
+            mfa: props?.mfa ?? Mfa.REQUIRED,
             mfaSecondFactor: {
                 otp: true,
                 sms: false
