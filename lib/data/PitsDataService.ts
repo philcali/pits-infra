@@ -149,6 +149,7 @@ export class PitsDataService extends Construct implements IPitsDataService {
             '$connect',
             '$disconnect',
             '$default',
+            'login',
             'invoke',
             'listSessions',
         ].map(route => {
