@@ -209,6 +209,7 @@ export class PitsDataStack extends Stack {
     this.dataService = new PitsDataService(this, 'DataPlaneApi', {
       table: props.table,
       dataEndpoint: props.dataEndpoint,
+      dataDomain: props.dataDomain,
       allowedManagementRoles: [
         props.pitsRoleName
       ],

@@ -22,6 +22,7 @@ export interface PitsDataResourceProps {
     readonly allowedManagementRoles?: RoleLike[];
     readonly authorization: PitsDataResourceAuthorizationProps;
     readonly dataEndpoint?: IAwsIotAccountEndpoint;
+    readonly dataDomain?: string;
 }
 
 export interface IPitsDataService {
@@ -50,6 +51,9 @@ export class PitsDataService extends Construct implements IPitsDataService {
                 'INDEX_NAME_1': 'GS1',
                 'DATA_ENDPOINT': (props.dataEndpoint ?? AwsIotAccountEndpoint.dataEndpoint(this)).endpointAddress,
                 'ACCOUNT_ID': Aws.ACCOUNT_ID,
+                'SERVICE_DOMAIN': props.dataDomain ?? '',
+                'USER_POOL_ID': props.authorization.userPoolId,
+                'USER_CLIENT_ID': props.authorization.clientId,
             }
         }
 
@@ -63,14 +67,14 @@ export class PitsDataService extends Construct implements IPitsDataService {
             handler: 'pinthesky.auth.user_jwt',
             environment: {
                 ...commonProps.environment,
-                'USER_POOL_ID': props.authorization.userPoolId,
-                'USER_CLIENT_ID': props.authorization.clientId,
             }
         });
 
         socketHandler.addToRolePolicy(new PolicyStatement({
             effect: Effect.ALLOW,
             actions: [
+                'dynamodb:BatchGetItem',
+                'dynamodb:BatchWriteItem',
                 'dynamodb:GetItem',
                 'dynamodb:PutItem',
                 'dynamodb:DeleteItem',
@@ -175,7 +179,7 @@ export class PitsDataService extends Construct implements IPitsDataService {
                     apiId: resourceApi.ref,
                     authorizerType: 'REQUEST',
                     name: `${name}-auth`,
-                    identitySource: ['route.request.header.Authorization'],
+                    identitySource: ['route.request.header.Sec-Websocket-Protocol'],
                     authorizerCredentialsArn: credentialsRole.roleArn,
                     authorizerUri: integrationUri,
                 });
