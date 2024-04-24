@@ -192,7 +192,7 @@ export class PitsConsoleStack extends Stack {
 export interface PitsDataStackProps extends StackProps, PitsReachabilityProps {
   readonly table: ITable;
   readonly authorization: IPitsAuthorization;
-  readonly pitsRoleName: string;
+  readonly pitsRoleNames: string[];
   readonly dataDomain?: string;
   readonly dataEndpoint?: IAwsIotAccountEndpoint;
 }
@@ -210,9 +210,7 @@ export class PitsDataStack extends Stack {
       table: props.table,
       dataEndpoint: props.dataEndpoint,
       dataDomain: props.dataDomain,
-      allowedManagementRoles: [
-        props.pitsRoleName
-      ],
+      allowedManagementRoles: props.pitsRoleNames,
       authorization: {
         userPoolId: props.authorization.userPool.userPoolId,
         clientId: props.authorization.defaultUserClient.userPoolClientId,
@@ -291,7 +289,10 @@ export class PitsInfraStack extends Stack {
     new PitsDataStack(this, 'DataStack', {
       table: apiStack.resourceService.table,
       authorization: authorizationStack.authorization,
-      pitsRoleName: deviceConnectionStack.deviceConnection.role.role.roleName,
+      pitsRoleNames: [
+        deviceConnectionStack.deviceConnection.role.role.roleName,
+        apiStack.resourceService.lambdaFunction.role?.roleName as string,
+      ],
       dataDomain,
       dataEndpoint,
       certificate,
