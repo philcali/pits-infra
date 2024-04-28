@@ -156,6 +156,7 @@ export class PitsDataService extends Construct implements IPitsDataService {
             'login',
             'invoke',
             'listSessions',
+            'status',
         ].map(route => {
             let integrationUri = `arn:${Aws.PARTITION}:apigateway:${Aws.REGION}:lambda:path/2015-03-31/functions/${socketHandler.functionArn}/invocations`;
             const routeKey = route.replace('$', '');
