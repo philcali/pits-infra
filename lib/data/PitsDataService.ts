@@ -1,7 +1,7 @@
 import { ArnFormat, Aws, Duration, Stack } from "aws-cdk-lib";
 import { CfnApi, CfnApiMapping, CfnAuthorizer, CfnDomainName, CfnIntegration, CfnRoute, CfnRouteProps, CfnStage } from "aws-cdk-lib/aws-apigatewayv2";
 import { ITable } from "aws-cdk-lib/aws-dynamodb";
-import { Effect, IManagedPolicy, IRole, ManagedPolicy, PolicyDocument, PolicyStatement, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
+import { Effect, IRole, ManagedPolicy, PolicyDocument, PolicyStatement, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { Code, Function, IFunction, Runtime } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
 import { AwsIotAccountEndpoint, IAwsIotAccountEndpoint } from "../api/AwsIotAccountEndpoint";
